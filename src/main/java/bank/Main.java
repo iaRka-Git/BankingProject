@@ -2,9 +2,9 @@ package bank;
 
 
 public class Main {
-    static void main() {
+    public static void main(String[] args) {
 
-        IO.println("Hello and welcome!");
+        System.out.println("Hello and welcome!");
 
     }
 }
