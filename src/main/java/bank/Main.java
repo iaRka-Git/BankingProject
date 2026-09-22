@@ -1,4 +1,4 @@
-package com.github.iarka_git;
+package bank;
 
 
 public class Main {
