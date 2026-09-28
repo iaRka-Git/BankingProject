@@ -66,8 +66,28 @@ public abstract class BankAccount {
     }
 
     /**
-     * Internal method to log transactions. Called by subclasses.
+     * Restores a previously persisted state: balance, active flag and transaction history.
+     *
+     * <p>This method exists for the persistence layer only, so that accounts can be restored
+     * after a restart with exactly the state they had before. Regular operations must go
+     * through {@link #deposit(BigDecimal, String)}, {@link #withdraw(BigDecimal, String)} or
+     * {@link #transfer(BankAccount, BigDecimal, String)}; no business rules are checked here
+     * because the data has already been validated when it was saved.</p>
+     *
+     * @param balance      the persisted balance, must not be {@code null}
+     * @param isActive     the persisted active flag
+     * @param transactions the persisted transaction history, may be {@code null} or empty
      */
+    public void restoreState(BigDecimal balance, boolean isActive, List<Transaction> transactions) {
+        this.balance = Objects.requireNonNull(balance, "Balance cannot be null");
+        this.isActive = isActive;
+        this.transactions.clear();
+        if (transactions != null) {
+            this.transactions.addAll(transactions);
+        }
+    }
+
+    // Internal method to log transactions. Called by subclasses.
     protected void recordTransaction(BigDecimal amount, String comment) {
         transactions.add(new Transaction(amount, LocalDateTime.now(), comment));
     }
