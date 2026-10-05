@@ -41,7 +41,8 @@ public class Main {
         if (users.isEmpty()) {
             authService.register(DEMO_USER_ID, DEMO_PASSWORD);
             System.out.println("No user was found, a demo user was created: "
-                    + DEMO_USER_ID + " / " + DEMO_PASSWORD);
+                    + DEMO_USER_ID + " / " + DEMO_PASSWORD
+                    + " (choose 'Register a new user' to create your own)");
         }
 
         AtomicBoolean stateSaved = new AtomicBoolean(false);
@@ -59,10 +60,8 @@ public class Main {
         Runtime.getRuntime().addShutdownHook(new Thread(saveState, "bank-state-saver"));
 
         try (Scanner scanner = new Scanner(System.in)) {
-            User user = login(authService, scanner);
-            if (user == null) {
-                System.out.println("Authentication failed. Goodbye!");
-            } else {
+            User user = entryMenu(authService, scanner);
+            if (user != null) {
                 System.out.println("Welcome, " + user.getUserId() + "!");
                 showAccounts(user);
                 runMenu(user, scanner);
@@ -70,6 +69,90 @@ public class Main {
         }
         saveState.run();
     }
+
+    /**
+     * Menu shown before a session starts: the customer can log in, register a new user or exit.
+     * A freshly registered customer is logged in right away.
+     *
+     * @return the authenticated user, or {@code null} when the customer chose to exit or the
+     *         input ended
+     */
+    private static User entryMenu(AuthService authService, Scanner scanner) {
+        while (true) {
+            System.out.println();
+            System.out.println("1) Log in");
+            System.out.println("2) Register a new user");
+            System.out.println("3) Exit");
+            System.out.print("Choose an option: ");
+
+            if (!scanner.hasNextLine()) {
+                System.out.println();
+                System.out.println("End of input reached.");
+                return null;
+            }
+
+            switch (scanner.nextLine().trim()) {
+                case "1" -> {
+                    User user = login(authService, scanner);
+                    if (user != null) {
+                        return user;
+                    }
+                }
+                case "2" -> {
+                    User user = register(authService, scanner);
+                    if (user != null) {
+                        return user;
+                    }
+                }
+                case "3" -> {
+                    return null;
+                }
+                default -> System.out.println("Unknown option, please try again.");
+            }
+        }
+    }
+
+    /**
+     * Reads the data of a new customer, creates the user and logs the customer in.
+     *
+     * @return the newly registered user, or {@code null} when the input was invalid, the user id
+     *         was already taken or the input ended
+     */
+    private static User register(AuthService authService, Scanner scanner) {
+        String userId = readValue(scanner, "New user ID: ");
+        if (userId == null) {
+            System.out.println("End of input reached.");
+            return null;
+        }
+        String password = readValue(scanner, "Password: ");
+        String passwordConfirmation = readValue(scanner, "Repeat password: ");
+        if (password == null || passwordConfirmation == null) {
+            System.out.println("End of input reached.");
+            return null;
+        }
+        if (userId.isBlank()) {
+            System.out.println("User ID cannot be blank.");
+            return null;
+        }
+        if (password.isBlank()) {
+            System.out.println("Password cannot be blank.");
+            return null;
+        }
+        if (!password.equals(passwordConfirmation)) {
+            System.out.println("Passwords do not match, nothing was registered.");
+            return null;
+        }
+
+        try {
+            User user = authService.register(userId, password);
+            System.out.println("User '" + user.getUserId() + "' was registered.");
+            return user;
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            System.out.println("Could not register the user: " + e.getMessage());
+            return null;
+        }
+    }
+
     private static User login(AuthService authService, Scanner scanner) {
         for (int attempt = 1; attempt <= MAX_LOGIN_ATTEMPTS; attempt++) {
             try {
