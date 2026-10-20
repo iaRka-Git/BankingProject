@@ -6,6 +6,7 @@ target/
 
 ### Runtime state of the banking application ###
 /data/
+/logs/
 
 ### IntelliJ IDEA ###
 .idea/
