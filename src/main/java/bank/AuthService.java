@@ -1,5 +1,7 @@
 package bank;
 
+import bank.logging.BankLogging;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -7,6 +9,7 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Scanner;
+import java.util.logging.Logger;
 
 /**
  * Handles password hashing and console based authentication.
@@ -18,6 +21,8 @@ import java.util.Scanner;
  * information through its running time.</p>
  */
 public class AuthService {
+
+    private static final Logger LOGGER = BankLogging.getLogger(AuthService.class);
 
     private static final String HASH_ALGORITHM = "SHA-256";
 
@@ -134,7 +139,7 @@ public class AuthService {
     }
 
     private static String prompt(Scanner scanner, String label) {
-        System.out.print(label);
+        LOGGER.info(label);
         if (!scanner.hasNextLine()) {
             throw new AuthenticationException("Input ended while '" + label.trim() + "' was expected");
         }
