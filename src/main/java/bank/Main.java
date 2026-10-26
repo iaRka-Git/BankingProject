@@ -1,6 +1,9 @@
 package bank;
 
 import bank.logging.BankLogging;
+import bank.logging.SecurityAuditLogger;
+import bank.logging.SecurityAuditLogger.Action;
+import bank.logging.SecurityAuditLogger.Status;
 import bank.storage.JsonPersistence;
 import bank.storage.StorageException;
 import bank.storage.StorageService;
@@ -13,13 +16,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 // example how it currently works, change main once real logic implemented
 public class Main {
 
-    private static final Logger LOGGER = BankLogging.getLogger(Main.class);
+    private static final Logger LOGGER = BankLogging.getConsoleLogger(Main.class);
+    private static final Logger SYSTEM_LOGGER = BankLogging.getLogger(Main.class);
 
     private static final Path DEFAULT_STATE_FILE = Path.of("data", "bank-state.json");
     private static final int MAX_LOGIN_ATTEMPTS = 3;
@@ -39,10 +44,11 @@ public class Main {
         try {
             users = new LinkedHashMap<>(storage.loadUsers());
         } catch (StorageException e) {
-            LOGGER.log(Level.SEVERE, "Could not load the bank state: " + e.getMessage(), e);
+            SYSTEM_LOGGER.log(Level.SEVERE, "Could not load the bank state", e);
             return;
         }
         LOGGER.info("Loaded " + users.size() + " user(s) from " + stateFile.toAbsolutePath());
+        SYSTEM_LOGGER.info("Bank state loaded");
 
         AuthService authService = new AuthService(users);
         if (users.isEmpty()) {
@@ -53,13 +59,17 @@ public class Main {
         }
 
         AtomicBoolean stateSaved =   new AtomicBoolean(false);
+        AtomicReference<String> sessionActor = new AtomicReference<>("system");
         Runnable saveState = () -> {
             if (stateSaved.compareAndSet(false, true)) {
                 try {
                     storage.saveUsers(users);
+                    SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.SUCCESS);
                     LOGGER.info("Bank state saved to " + stateFile.toAbsolutePath());
+                    SYSTEM_LOGGER.info("Bank state saved");
                 } catch (StorageException e) {
-                    LOGGER.log(Level.SEVERE, "Could not save the bank state: " + e.getMessage(), e);
+                    SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.FAILURE);
+                    SYSTEM_LOGGER.log(Level.SEVERE, "Could not save the bank state", e);
                 }
             }
         };
@@ -69,6 +79,7 @@ public class Main {
         try (Scanner scanner = new Scanner(System.in)) {
             User user = entryMenu(authService, scanner);
             if (user != null) {
+                sessionActor.set(user.getUserId());
                 LOGGER.info("Welcome, " + user.getUserId() + "!");
                 showAccounts(user);
                 runMenu(user, scanner);
@@ -235,6 +246,7 @@ public class Main {
             return;
         }
         if (accountNumber.isBlank()) {
+            SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, null, Status.FAILURE);
             LOGGER.warning("Account number cannot be blank.");
             return;
         }
@@ -242,13 +254,16 @@ public class Main {
         try {
             BankAccount account = new CheckingAccount(accountNumber, user.getUserId(), parseCurrency(currency));
             user.addAccount(account);
+            SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, accountNumber, Status.SUCCESS);
             LOGGER.info("Account " + account.getAccountNumber() + " was added to " + user.getUserId() + ".");
         } catch (IllegalArgumentException e) {
+            SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, accountNumber, Status.FAILURE);
             LOGGER.warning("Could not open the account: " + e.getMessage());
         }
     }
 
     private static void changeAccountState(User user, Scanner scanner, boolean active) {
+        Action action = active ? Action.UNBLOCK_ACCOUNT : Action.BLOCK_ACCOUNT;
         String accountNumber = readValue(scanner, "Account number: ");
         if (accountNumber == null) {
             LOGGER.info("End of input reached.");
@@ -258,12 +273,15 @@ public class Main {
         try {
             if (active) {
                 user.unblockAccount(accountNumber);
+                SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.SUCCESS);
                 LOGGER.info("Account " + accountNumber + " was unblocked.");
             } else {
                 user.blockAccount(accountNumber);
+                SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.SUCCESS);
                 LOGGER.info("Account " + accountNumber + " was blocked.");
             }
         } catch (IllegalArgumentException e) {
+            SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.FAILURE);
             LOGGER.warning("Could not change the account state: " + e.getMessage());
         }
     }
@@ -278,17 +296,21 @@ public class Main {
 
         Optional<BankAccount> account = user.findAccount(accountNumber);
         if (account.isEmpty()) {
+            SecurityAuditLogger.record(user.getUserId(), Action.DEPOSIT, accountNumber, Status.FAILURE);
             LOGGER.warning("User '" + user.getUserId() + "' has no account with number '" + accountNumber + "'.");
             return;
         }
 
         try {
             account.get().deposit(new BigDecimal(amount), "Console deposit");
+            SecurityAuditLogger.record(user.getUserId(), Action.DEPOSIT, accountNumber, Status.SUCCESS);
             LOGGER.info("New balance of " + accountNumber + ": "
                     + account.get().getBalance() + " " + account.get().getCurrency());
         } catch (NumberFormatException e) {
+            SecurityAuditLogger.record(user.getUserId(), Action.DEPOSIT, accountNumber, Status.FAILURE);
             LOGGER.warning("'" + amount + "' is not a valid amount.");
         } catch (IllegalArgumentException | IllegalStateException e) {
+            SecurityAuditLogger.record(user.getUserId(), Action.DEPOSIT, accountNumber, Status.FAILURE);
             LOGGER.warning("Deposit failed: " + e.getMessage());
         }
     }
