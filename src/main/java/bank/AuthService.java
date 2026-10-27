@@ -1,5 +1,10 @@
 package bank;
 
+import bank.logging.BankLogging;
+import bank.logging.SecurityAuditLogger;
+import bank.logging.SecurityAuditLogger.Action;
+import bank.logging.SecurityAuditLogger.Status;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -7,6 +12,7 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Scanner;
+import java.util.logging.Logger;
 
 /**
  * Handles password hashing and console based authentication.
@@ -18,6 +24,8 @@ import java.util.Scanner;
  * information through its running time.</p>
  */
 public class AuthService {
+
+    private static final Logger LOGGER = BankLogging.getConsoleLogger(AuthService.class);
 
     private static final String HASH_ALGORITHM = "SHA-256";
 
@@ -77,6 +85,17 @@ public class AuthService {
      *                                 password does not match the stored hash
      */
     public User authenticate(String userId, String rawPassword) {
+        try {
+            User user = authenticateCredentials(userId, rawPassword);
+            SecurityAuditLogger.record(user.getUserId(), Action.LOGIN, null, Status.SUCCESS);
+            return user;
+        } catch (AuthenticationException e) {
+            SecurityAuditLogger.record(userId, Action.LOGIN, null, Status.FAILURE);
+            throw e;
+        }
+    }
+
+    private User authenticateCredentials(String userId, String rawPassword) {
         if (userId == null || userId.isBlank()) {
             throw new AuthenticationException("User ID cannot be null or blank");
         }
@@ -105,6 +124,17 @@ public class AuthService {
      * @throws IllegalStateException    when the user id is already taken
      */
     public User register(String userId, String rawPassword) {
+        try {
+            User user = registerUser(userId, rawPassword);
+            SecurityAuditLogger.record(user.getUserId(), Action.REGISTER, null, Status.SUCCESS);
+            return user;
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            SecurityAuditLogger.record(userId, Action.REGISTER, null, Status.FAILURE);
+            throw e;
+        }
+    }
+
+    private User registerUser(String userId, String rawPassword) {
         if (userId == null || userId.isBlank()) {
             throw new IllegalArgumentException("User ID cannot be null or blank");
         }
@@ -134,7 +164,7 @@ public class AuthService {
     }
 
     private static String prompt(Scanner scanner, String label) {
-        System.out.print(label);
+        LOGGER.info(label);
         if (!scanner.hasNextLine()) {
             throw new AuthenticationException("Input ended while '" + label.trim() + "' was expected");
         }
