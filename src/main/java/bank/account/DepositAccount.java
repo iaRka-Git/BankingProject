@@ -1,6 +1,4 @@
 package bank.account;
-
-import bank.BankAccount;
 import bank.Currency;
 
 import java.math.BigDecimal;
@@ -71,7 +69,7 @@ public class DepositAccount extends BankAccount {
      * Withdraws funds respecting the maturity date and early withdrawal rules.
      */
     @Override
-    public void withdraw(BigDecimal amount, String comment) {
+    public synchronized void withdraw(BigDecimal amount, String comment) {
         ensureCanWithdraw(amount);
 
         if (LocalDate.now().isBefore(maturityDate)) {
@@ -84,7 +82,7 @@ public class DepositAccount extends BankAccount {
     /**
      * Accrues interest on the current balance and records the transaction.
      */
-    public void accrueInterest() {
+    public synchronized void accrueInterest() {
         if (!isActive()) {
             throw new IllegalStateException("Account is blocked or inactive.");
         }

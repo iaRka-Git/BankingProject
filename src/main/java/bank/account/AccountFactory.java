@@ -1,6 +1,5 @@
-package bank.storage;
+package bank.account;
 
-import bank.BankAccount;
 import bank.Currency;
 
 /**

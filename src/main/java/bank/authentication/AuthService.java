@@ -1,4 +1,4 @@
-package bank;
+package bank.authentication;
 
 import bank.logging.BankLogging;
 import bank.logging.SecurityAuditLogger;

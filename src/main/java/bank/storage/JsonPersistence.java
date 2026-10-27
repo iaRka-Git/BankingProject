@@ -1,9 +1,10 @@
 package bank.storage;
 
-import bank.BankAccount;
-import bank.CheckingAccount;
+import bank.account.AccountFactory;
+import bank.account.BankAccount;
+import bank.account.CheckingAccount;
 import bank.Currency;
-import bank.User;
+import bank.authentication.User;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -311,7 +312,7 @@ public class JsonPersistence implements StorageService {
      * Derives the persisted type name of an account class from its simple class name:
      * {@code CheckingAccount} becomes {@code CHECKING} and {@code SavingsAccount} becomes
      * {@code SAVINGS}. The conventional {@code Account} suffix is dropped, everything else is
-     * upper cased. Save and load always use this same function, so a type name can never be
+     * uppercased. Save and load always use this same function, so a type name can never be
      * written under one spelling and looked up under another.
      */
     public static String typeNameOf(Class<?> accountType) {
