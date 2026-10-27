@@ -1,5 +1,8 @@
 package bank;
 
+import bank.account.BankAccount;
+import bank.account.CheckingAccount;
+import bank.authentication.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

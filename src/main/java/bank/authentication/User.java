@@ -1,4 +1,6 @@
-package bank;
+package bank.authentication;
+
+import bank.account.BankAccount;
 
 import java.util.ArrayList;
 import java.util.Collections;

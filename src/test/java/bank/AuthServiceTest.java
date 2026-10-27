@@ -1,5 +1,8 @@
 package bank;
 
+import bank.authentication.AuthService;
+import bank.authentication.AuthenticationException;
+import bank.authentication.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

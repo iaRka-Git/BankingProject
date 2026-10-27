@@ -1,5 +1,6 @@
-package bank;
+package bank.account;
 
+import bank.Currency;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;

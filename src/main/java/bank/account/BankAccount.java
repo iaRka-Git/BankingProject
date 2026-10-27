@@ -1,4 +1,5 @@
-package bank;
+package bank.account;
+import bank.Currency;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -6,11 +7,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-
-/**
- * Supported account currencies.
- */
-
 
 /**
  * Base abstract class for all bank account types.
@@ -47,21 +43,28 @@ public abstract class BankAccount {
         this.transactions = new ArrayList<>();
     }
 
-    // --- Getters ---
+    // Getters
     public String getAccountNumber() { return accountNumber; }
     public String getOwnerId() { return ownerId; }
     public Currency getCurrency() { return currency; }
-    public boolean isActive() { return isActive; }
-    public BigDecimal getBalance() { return balance; }
 
-    /**
-     * Returns an unmodifiable view of the transaction history.
-     */
-    public List<Transaction> getStatement() {
-        return Collections.unmodifiableList(transactions);
+    // Synchronized getters
+    public synchronized boolean isActive() {
+        return isActive;
     }
 
-    public void setActive(boolean active) {
+    public synchronized BigDecimal getBalance() {
+        return balance;
+    }
+
+    /**
+     * Returns an unmodifiable deep copy of view of the transaction history.
+     */
+    public synchronized List<Transaction> getStatement() {
+        return Collections.unmodifiableList(new ArrayList<>(transactions));
+    }
+
+    public synchronized void setActive(boolean active) {
         this.isActive = active;
     }
 
@@ -87,15 +90,15 @@ public abstract class BankAccount {
         }
     }
 
-    // Internal method to log transactions. Called by subclasses.
-    protected void recordTransaction(BigDecimal amount, String comment) {
+    // Internal synchronized method to log transactions. Called by subclasses.
+    protected synchronized void recordTransaction(BigDecimal amount, String comment) {
         transactions.add(new Transaction(amount, LocalDateTime.now(), comment));
     }
 
     /**
      * Common deposit logic for all account types.
      */
-    public void deposit(BigDecimal amount, String comment) {
+    public synchronized void deposit(BigDecimal amount, String comment) {
         if (!isActive) {
             throw new IllegalStateException("Account is blocked or inactive.");
         }
@@ -129,18 +132,27 @@ public abstract class BankAccount {
         if (targetAccount == null) {
             throw new IllegalArgumentException("Target account cannot be null.");
         }
+        if (this == targetAccount) {
+            throw new IllegalArgumentException("Cannot transfer money to the same account.");
+        }
         if (this.currency != targetAccount.getCurrency()) {
             throw new IllegalArgumentException("Cross-currency transfers are not supported yet.");
         }
 
-        // 1. Withdraw from this account
-        String withdrawComment = (comment != null && !comment.isBlank())
-                ? comment
-                : "Transfer to " + targetAccount.getAccountNumber();
-        this.withdraw(amount, withdrawComment);
+        // The locking order is determined by the account number: the lower one comes first
+        BankAccount firstLock = this.accountNumber.compareTo(targetAccount.getAccountNumber()) < 0 ? this : targetAccount;
+        BankAccount secondLock = this.accountNumber.compareTo(targetAccount.getAccountNumber()) < 0 ? targetAccount : this;
 
-        // 2. Deposit to target account
-        String depositComment = "Transfer from " + this.accountNumber;
-        targetAccount.deposit(amount, depositComment);
+        synchronized (firstLock) {
+            synchronized (secondLock) {
+                String withdrawComment = (comment != null && !comment.isBlank())
+                        ? comment
+                        : "Transfer to " + targetAccount.getAccountNumber();
+                this.withdraw(amount, withdrawComment);
+
+                String depositComment = "Transfer from " + this.accountNumber;
+                targetAccount.deposit(amount, depositComment);
+            }
+        }
     }
 }
