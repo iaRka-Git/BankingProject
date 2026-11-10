@@ -1,4 +1,6 @@
-package bank;
+package bank.account;
+
+import bank.Currency;
 
 import java.math.BigDecimal;
 
@@ -23,7 +25,7 @@ public class CheckingAccount extends BankAccount {
      * @throws IllegalArgumentException when the amount is not positive or exceeds the balance
      */
     @Override
-    public void withdraw(BigDecimal amount, String comment) {
+    public synchronized void withdraw(BigDecimal amount, String comment) {
         if (!isActive()) {
             throw new IllegalStateException("Account is blocked or inactive.");
         }
