@@ -1,5 +1,6 @@
 package bank;
 
+import bank.account.AccountNumberGenerator;
 import bank.logging.BankLogging;
 import bank.logging.SecurityAuditLogger;
 import bank.logging.SecurityAuditLogger.Action;
@@ -44,12 +45,16 @@ public class Main {
         try {
             users = new LinkedHashMap<>(storage.loadUsers());
         } catch (StorageException e) {
-            SYSTEM_LOGGER.log(Level.SEVERE, "Could not load the bank state", e);
+            SYSTEM_LOGGER.log(Level.SEVERE, "Could not load the bank state: " + e.getMessage(), e);
             return;
         }
         LOGGER.info("Loaded " + users.size() + " user(s) from " + stateFile.toAbsolutePath());
         SYSTEM_LOGGER.info("Bank state loaded");
 
+        AccountNumberGenerator accountNumbers = new AccountNumberGenerator(users.values().stream()
+                .flatMap(user -> user.getAccounts().stream())
+                .map(BankAccount::getAccountNumber)
+                .toList());
         AuthService authService = new AuthService(users);
         if (users.isEmpty()) {
             authService.register(DEMO_USER_ID, DEMO_PASSWORD);
@@ -82,7 +87,7 @@ public class Main {
                 sessionActor.set(user.getUserId());
                 LOGGER.info("Welcome, " + user.getUserId() + "!");
                 showAccounts(user);
-                runMenu(user, scanner);
+                runMenu(user, scanner, accountNumbers);
             }
         }
         saveState.run();
@@ -189,7 +194,7 @@ public class Main {
         return null;
     }
 
-    private static void runMenu(User user, Scanner scanner) {
+    private static void runMenu(User user, Scanner scanner, AccountNumberGenerator accountNumbers) {
         boolean running = true;
         while (running) {
             LOGGER.info("""
@@ -212,7 +217,7 @@ public class Main {
             String option = scanner.nextLine().trim();
             switch (option) {
                 case "1" -> showAccounts(user);
-                case "2" -> openAccount(user, scanner);
+                case "2" -> openAccount(user, scanner, accountNumbers);
                 case "3" -> changeAccountState(user, scanner, false);
                 case "4" -> changeAccountState(user, scanner, true);
                 case "5" -> deposit(user, scanner);
@@ -238,25 +243,22 @@ public class Main {
                     account.getStatement().size()));
         }
     }
-    private static void openAccount(User user, Scanner scanner) {
-        String accountNumber = readValue(scanner, "Account number: ");
-        String currency = readValue(scanner, "Currency (EUR, USD, UAH): ");
-        if (accountNumber == null || currency == null) {
+    private static void openAccount(User user, Scanner scanner, AccountNumberGenerator accountNumbers) {
+        String currencyInput = readValue(scanner, "Currency (EUR, USD, UAH): ");
+        if (currencyInput == null) {
             LOGGER.info("End of input reached.");
             return;
         }
-        if (accountNumber.isBlank()) {
-            SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, null, Status.FAILURE);
-            LOGGER.warning("Account number cannot be blank.");
-            return;
-        }
 
+        String accountNumber = null;
         try {
-            BankAccount account = new CheckingAccount(accountNumber, user.getUserId(), parseCurrency(currency));
+            Currency currency = parseCurrency(currencyInput);
+            accountNumber = accountNumbers.next();
+            BankAccount account = new CheckingAccount(accountNumber, user.getUserId(), currency);
             user.addAccount(account);
             SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, accountNumber, Status.SUCCESS);
             LOGGER.info("Account " + account.getAccountNumber() + " was added to " + user.getUserId() + ".");
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, accountNumber, Status.FAILURE);
             LOGGER.warning("Could not open the account: " + e.getMessage());
         }

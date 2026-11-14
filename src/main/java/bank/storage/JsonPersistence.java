@@ -17,6 +17,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -132,8 +133,9 @@ public class JsonPersistence implements StorageService {
                     + " but only version " + CURRENT_SCHEMA_VERSION + " is supported");
         }
         if (document.users() != null) {
+            Map<String, String> accountOwners = new HashMap<>();
             for (UserRecord record : document.users()) {
-                User user = toUser(record);
+                User user = toUser(record, accountOwners);
                 users.put(user.getUserId(), user);
             }
         }
@@ -204,14 +206,21 @@ public class JsonPersistence implements StorageService {
     }
     // --- JSON -> Domain ---
 
-    private User toUser(UserRecord record) {
+    private User toUser(UserRecord record, Map<String, String> accountOwners) {
         if (record == null) {
             throw new StorageException("Bank state in '" + stateFile + "' contains an empty user record");
         }
         User user = new User(requireText(record.userId(), "userId"), requireText(record.passwordHash(), "passwordHash"));
         if (record.accounts() != null) {
             for (AccountRecord accountRecord : record.accounts()) {
-                user.addAccount(toAccount(accountRecord));
+                BankAccount account = toAccount(accountRecord);
+                String number = account.getAccountNumber();
+                String previousOwner = accountOwners.putIfAbsent(number, user.getUserId());
+                if (previousOwner != null) {
+                    throw new StorageException("Duplicate account number '" + number + "' in '" + stateFile
+                            + "' (user records '" + previousOwner + "' and '" + user.getUserId() + "')");
+                }
+                user.addAccount(account);
             }
         }
         return user;
