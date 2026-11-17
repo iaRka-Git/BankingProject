@@ -81,7 +81,7 @@ public abstract class BankAccount {
      * @param isActive     the persisted active flag
      * @param transactions the persisted transaction history, may be {@code null} or empty
      */
-    public void restoreState(BigDecimal balance, boolean isActive, List<Transaction> transactions) {
+    public synchronized void restoreState(BigDecimal balance, boolean isActive, List<Transaction> transactions) {
         this.balance = Objects.requireNonNull(balance, "Balance cannot be null");
         this.isActive = isActive;
         this.transactions.clear();
@@ -132,7 +132,7 @@ public abstract class BankAccount {
         if (targetAccount == null) {
             throw new IllegalArgumentException("Target account cannot be null.");
         }
-        if (this == targetAccount) {
+        if (this.accountNumber.equals(targetAccount.accountNumber)) {
             throw new IllegalArgumentException("Cannot transfer money to the same account.");
         }
         if (this.currency != targetAccount.getCurrency()) {
@@ -145,6 +145,10 @@ public abstract class BankAccount {
 
         synchronized (firstLock) {
             synchronized (secondLock) {
+                if (!targetAccount.isActive) {
+                    throw new IllegalStateException("Target account is blocked or inactive.");
+                }
+
                 String withdrawComment = (comment != null && !comment.isBlank())
                         ? comment
                         : "Transfer to " + targetAccount.getAccountNumber();
