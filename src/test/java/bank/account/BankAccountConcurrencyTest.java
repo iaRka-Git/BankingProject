@@ -90,7 +90,7 @@ class BankAccountConcurrencyTest {
                         account.withdraw(withdrawAmount, "Concurrent withdraw");
                         successCount.incrementAndGet();
                     } catch (IllegalArgumentException | IllegalStateException e) {
-                        // Очікувана помилка через брак коштів; інші винятки прокинуться у Future.get()
+                        // Expected failure due to insufficient funds; other exceptions will propagate via Future.get()
                         failCount.incrementAndGet();
                     }
                     return null;
@@ -143,7 +143,7 @@ class BankAccountConcurrencyTest {
 
         assertEquals(INITIAL_BALANCE, transferAccountA.getBalance());
         assertEquals(INITIAL_BALANCE, transferAccountB.getBalance());
-        // 1 початкове поповнення + 100 вихідних + 100 вхідних переказів = 201 запис
+        // 1 initial deposit + 100 outgoing + 100 incoming transfers = 201 records
         assertEquals(201, transferAccountA.getStatement().size(), "All 200 transfers must be recorded on A");
         assertEquals(201, transferAccountB.getStatement().size(), "All 200 transfers must be recorded on B");
     }
@@ -178,7 +178,7 @@ class BankAccountConcurrencyTest {
             executor.shutdownNow();
         }
 
-        // 1 початкове поповнення + 10 нарахувань відсотків + 10 зняттів = 21 операція
+        // 1 initial deposit + 10 interest accruals + 10 withdrawals = 21 operations
         assertEquals(21, depositAccount.getStatement().size(), "All 20 operations must succeed");
     }
 
@@ -249,7 +249,7 @@ class BankAccountConcurrencyTest {
         List<Future<?>> futures = new ArrayList<>(2);
 
         try {
-            // Потік 1: постійно перемикає стан рахунку між A (100, 1 транзакція) та B (500, 2 транзакції)
+            // Thread 1: repeatedly switches account state between A (100, 1 transaction) and B (500, 2 transactions)
             futures.add(executor.submit((Callable<Void>) () -> {
                 startLatch.await();
                 for (int i = 0; i < iterations; i++) {
@@ -262,7 +262,7 @@ class BankAccountConcurrencyTest {
                 return null;
             }));
 
-            // Потік 2: під локом рахунку читає баланс і виписку — вони завжди мають відповідати одному стану
+            // Thread 2: reads balance and statement under the account lock — they must always match the same state
             futures.add(executor.submit((Callable<Void>) () -> {
                 startLatch.await();
                 for (int i = 0; i < iterations; i++) {
