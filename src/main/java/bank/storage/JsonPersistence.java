@@ -2,8 +2,11 @@ package bank.storage;
 
 import bank.BankAccount;
 import bank.CheckingAccount;
+import bank.CreditAccount;
 import bank.Currency;
 import bank.User;
+import bank.account.DepositAccount;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -14,9 +17,11 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -63,6 +68,8 @@ public class JsonPersistence implements StorageService {
 
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
+    private static final DateTimeFormatter MATURITY_DATE_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE;
+
     private static final String ACCOUNT_SUFFIX = "Account";
 
     private final Path stateFile;
@@ -104,12 +111,20 @@ public class JsonPersistence implements StorageService {
 
         this.objectMapper = new ObjectMapper()
                 .enable(SerializationFeature.INDENT_OUTPUT)
-                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
 
-    // The account types that are known without any configuration: {@code CHECKING}.
+    // The account types that are known without any configuration:
+    // {@code CHECKING}, {@code CREDIT} and {@code DEPOSIT}.
     public static Map<String, AccountFactory> defaultAccountFactories() {
-        return Map.of(typeNameOf(CheckingAccount.class), CheckingAccount::new);
+        return Map.of(
+                typeNameOf(CheckingAccount.class), CheckingAccount::new,
+                typeNameOf(CreditAccount.class), (number, owner, currency) ->
+                        new CreditAccount(number, owner, currency, BigDecimal.ZERO, BigDecimal.ZERO),
+                typeNameOf(DepositAccount.class), (number, owner, currency) ->
+                        new DepositAccount(number, owner, currency, LocalDate.now(), false, BigDecimal.ZERO)
+        );
     }
     @Override
     public Map<String, User> loadUsers() {
@@ -132,8 +147,9 @@ public class JsonPersistence implements StorageService {
                     + " but only version " + CURRENT_SCHEMA_VERSION + " is supported");
         }
         if (document.users() != null) {
+            Map<String, String> accountOwners = new HashMap<>();
             for (UserRecord record : document.users()) {
-                User user = toUser(record);
+                User user = toUser(record, accountOwners);
                 users.put(user.getUserId(), user);
             }
         }
@@ -174,10 +190,40 @@ public class JsonPersistence implements StorageService {
 
     private AccountRecord toAccountRecord(BankAccount account) {
         return new AccountRecord(resolveType(account), account.getAccountNumber(), account.getOwnerId(),
-                account.getCurrency().name(), account.isActive(), account.getBalance(), account.getStatement().stream()
-                .map(JsonPersistence::toTransactionRecord)
-                .toList());
+                account.getCurrency().name(), account.isActive(), account.getBalance(),
+                statementRecords(account),
+                creditLimitOf(account), interestRateOf(account), maturityDateOf(account),
+                account instanceof DepositAccount deposit ? deposit.isEarlyWithdrawalAllowed() : null);
     }
+
+    private static List<TransactionRecord> statementRecords(BankAccount account) {
+        return account.getStatement().stream()
+                .map(JsonPersistence::toTransactionRecord)
+                .toList();
+    }
+
+    private static BigDecimal creditLimitOf(BankAccount account) {
+        return account instanceof CreditAccount credit ? credit.getCreditLimit() : null;
+    }
+
+    private static BigDecimal interestRateOf(BankAccount account) {
+        if (account instanceof CreditAccount credit) {
+            return credit.getInterestRate();
+        }
+        if (account instanceof DepositAccount deposit) {
+            return deposit.getInterestRate();
+        }
+        return null;
+    }
+
+    private static String maturityDateOf(BankAccount account) {
+        if (account instanceof DepositAccount deposit) {
+            return deposit.getMaturityDate().format(MATURITY_DATE_FORMAT);
+        }
+        return null;
+    }
+
+
 
     private static TransactionRecord toTransactionRecord(BankAccount.Transaction transaction) {
         return new TransactionRecord(transaction.amount(), formatTimestamp(transaction.timestamp()), transaction.comment());
@@ -204,14 +250,21 @@ public class JsonPersistence implements StorageService {
     }
     // --- JSON -> Domain ---
 
-    private User toUser(UserRecord record) {
+    private User toUser(UserRecord record, Map<String, String> accountOwners) {
         if (record == null) {
             throw new StorageException("Bank state in '" + stateFile + "' contains an empty user record");
         }
         User user = new User(requireText(record.userId(), "userId"), requireText(record.passwordHash(), "passwordHash"));
         if (record.accounts() != null) {
             for (AccountRecord accountRecord : record.accounts()) {
-                user.addAccount(toAccount(accountRecord));
+                BankAccount account = toAccount(accountRecord);
+                String number = account.getAccountNumber();
+                String previousOwner = accountOwners.putIfAbsent(number, user.getUserId());
+                if (previousOwner != null) {
+                    throw new StorageException("Duplicate account number '" + number + "' in '" + stateFile
+                            + "' (user records '" + previousOwner + "' and '" + user.getUserId() + "')");
+                }
+                user.addAccount(account);
             }
         }
         return user;
@@ -229,8 +282,11 @@ public class JsonPersistence implements StorageService {
                     + "' is not supported (known types: " + accountFactories.keySet() + ")");
         }
 
-        BankAccount account = factory.create(requireText(record.accountNumber(), "accountNumber"),
-                requireText(record.ownerId(), "ownerId"), parseCurrency(record.currency(), record.accountNumber()));
+        String accountNumber = requireText(record.accountNumber(), "accountNumber");
+        BankAccount account = factory.create(accountNumber,
+                requireText(record.ownerId(), "ownerId"), parseCurrency(record.currency(), accountNumber));
+
+        restoreTypeSpecifics(account, record);
 
         List<BankAccount.Transaction> statement = record.statement() == null
                 ? List.of()
@@ -239,6 +295,59 @@ public class JsonPersistence implements StorageService {
         account.restoreState(record.balance() == null ? BigDecimal.ZERO : record.balance(),
                 record.active(), statement);
         return account;
+    }
+
+    /**
+     * Reinstates the type-specific terms persisted for credit and deposit accounts.
+     * Checking accounts have no type-specific terms, so nothing happens for them.
+     *
+     * @throws StorageException when a required term is missing or invalid
+     */
+    private static void restoreTypeSpecifics(BankAccount account, AccountRecord record) {
+        String accountNumber = record.accountNumber();
+        try {
+            if (account instanceof CreditAccount credit) {
+                credit.restoreCreditTerms(
+                        requireDecimal(record.creditLimit(), "creditLimit", accountNumber),
+                        requireDecimal(record.interestRate(), "interestRate", accountNumber));
+            } else if (account instanceof DepositAccount deposit) {
+                deposit.restoreDepositTerms(
+                        parseMaturityDate(record.maturityDate(), accountNumber),
+                        parseEarlyWithdrawalFlag(record.allowEarlyWithdrawal(), accountNumber),
+                        requireDecimal(record.interestRate(), "interestRate", accountNumber));
+            }
+        } catch (IllegalArgumentException e) {
+            throw new StorageException("Invalid persisted terms for account '" + accountNumber + "': " + e.getMessage(), e);
+        }
+    }
+
+    private static BigDecimal requireDecimal(BigDecimal value, String field, String accountNumber) {
+        if (value == null) {
+            throw new StorageException("Required field '" + field + "' is missing or blank in the persisted state "
+                    + "of account '" + accountNumber + "'");
+        }
+        return value;
+    }
+
+    private static LocalDate parseMaturityDate(String value, String accountNumber) {
+        if (value == null || value.isBlank()) {
+            throw new StorageException("Required field 'maturityDate' is missing or blank in the persisted state "
+                    + "of account '" + accountNumber + "'");
+        }
+        try {
+            return LocalDate.parse(value, MATURITY_DATE_FORMAT);
+        } catch (DateTimeParseException e) {
+            throw new StorageException("Maturity date '" + value + "' of account '" + accountNumber
+                    + "' is not a valid ISO-8601 date", e);
+        }
+    }
+
+    private static boolean parseEarlyWithdrawalFlag(Boolean value, String accountNumber) {
+        if (value == null) {
+            throw new StorageException("Required field 'allowEarlyWithdrawal' is missing in the persisted state "
+                    + "of account '" + accountNumber + "'");
+        }
+        return value;
     }
 
     private static BankAccount.Transaction toTransaction(TransactionRecord record) {
@@ -335,7 +444,11 @@ public class JsonPersistence implements StorageService {
                                  String currency,
                                  boolean active,
                                  BigDecimal balance,
-                                 List<TransactionRecord> statement) {}
+                                 List<TransactionRecord> statement,
+                                 BigDecimal creditLimit,
+                                 BigDecimal interestRate,
+                                 String maturityDate,
+                                 Boolean allowEarlyWithdrawal) {}
 
     private record TransactionRecord(BigDecimal amount, String timestamp, String comment) {}
 }
