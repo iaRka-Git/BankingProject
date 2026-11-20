@@ -31,8 +31,8 @@ public class CreditAccount extends BankAccount {
     private static final String DEFAULT_WITHDRAWAL_COMMENT = "Credit funds withdrawal";
     private static final String INTEREST_COMMENT = "Interest charge on utilized credit";
 
-    private final BigDecimal creditLimit;
-    private final BigDecimal interestRate;
+    private BigDecimal creditLimit;
+    private BigDecimal interestRate;
 
     /**
      * @param accountNumber unique account number, must not be null
@@ -60,6 +60,23 @@ public class CreditAccount extends BankAccount {
 
     public BigDecimal getInterestRate() {
         return interestRate;
+    }
+
+    /**
+     * Reinstates the credit terms that were persisted earlier.
+     *
+     * <p>Intended for the persistence layer only, so that a restored credit account
+     * keeps its original limit and interest rate. Regular operations go through the
+     * constructors and {@link #withdraw(BigDecimal, String)}.</p>
+     *
+     * @param creditLimit   the persisted credit limit, non-null and non-negative
+     * @param interestRate  the persisted annual interest rate, non-null and non-negative
+     * @throws NullPointerException     if any argument is null
+     * @throws IllegalArgumentException if {@code creditLimit} or {@code interestRate} is negative
+     */
+    public void restoreCreditTerms(BigDecimal creditLimit, BigDecimal interestRate) {
+        this.creditLimit = requireNonNegative(creditLimit, "Credit limit cannot be negative");
+        this.interestRate = requireNonNegative(interestRate, "Interest rate cannot be negative");
     }
 
     /**
