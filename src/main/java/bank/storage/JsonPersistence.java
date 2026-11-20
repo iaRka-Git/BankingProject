@@ -1,7 +1,6 @@
 package bank.storage;
 
-import bank.BankAccount;
-import bank.CheckingAccount;
+import bank.account.*;
 import bank.Currency;
 import bank.User;
 import com.fasterxml.jackson.databind.DeserializationFeature;
