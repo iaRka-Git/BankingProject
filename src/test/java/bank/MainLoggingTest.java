@@ -1,6 +1,7 @@
 package bank;
 
 import bank.storage.JsonPersistence;
+import bank.account.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class MainLoggingTest {
         Path auditFile = logFile.resolveSibling("security-audit.jsonl");
         String password = "private-test-password";
         String input = String.join("\n", "unknown", "2", "клієнт", password, password,
-                "2", "UAH", "5", FIRST_ACCOUNT_NUMBER, "125.50",
+                "2", "UAH", "1", "5", FIRST_ACCOUNT_NUMBER, "125.50",
                 "3", FIRST_ACCOUNT_NUMBER, "5", FIRST_ACCOUNT_NUMBER, "999.99",
                 "4", FIRST_ACCOUNT_NUMBER, "1", "6", "");
 
@@ -191,17 +192,18 @@ class MainLoggingTest {
         storage.saveUsers(Map.of("alice", alice));
 
         String firstRun = runMain(stateFile, logFile,
-                String.join("\n", "1", "alice", password, "2", "UAH", "2", "USD", "6", ""));
+                String.join("\n", "1", "alice", password, "2", "UAH", "1", "2", "USD", "1", "6", ""));
         String secondRun = runMain(stateFile, logFile,
-                String.join("\n", "2", "bob", password, password, "2", "EUR", "6", ""));
+                String.join("\n", "2", "bob", password, password, "2", "EUR", "1", "6", ""));
 
         assertFalse(firstRun.contains("Account number:"));
         assertFalse(secondRun.contains("Account number:"));
         String aliceFirstNewNumber = "UA000000000000000043";
         String aliceSecondNewNumber = "UA000000000000000044";
         String bobNumber = "UA000000000000000045";
-        assertTrue(firstRun.contains("Account " + aliceFirstNewNumber + " was added to alice."));
-        assertTrue(secondRun.contains("Account " + bobNumber + " was added to bob."));
+        assertTrue(firstRun.contains("Account " + aliceFirstNewNumber + " (CHECKING) was added to alice."));
+        assertTrue(firstRun.contains("Account " + aliceSecondNewNumber + " (CHECKING) was added to alice."));
+        assertTrue(secondRun.contains("Account " + bobNumber + " (CHECKING) was added to bob."));
         Map<String, User> loaded = storage.loadUsers();
         assertEquals(List.of(highestNumber, legacyNumber, aliceFirstNewNumber, aliceSecondNewNumber),
                 loaded.get("alice").getAccounts().stream().map(BankAccount::getAccountNumber).toList());
@@ -228,6 +230,61 @@ class MainLoggingTest {
         assertTrue(console.contains("bob"), console);
         assertFalse(console.contains("Choose an option:"), console);
         assertEquals(original, Files.readString(stateFile));
+    }
+
+    @Test
+    void shouldOpenCreditAndTermDepositAccountsFromTheMenu() throws Exception {
+        Path stateFile = tempDir.resolve("state.json");
+        Path logFile = tempDir.resolve("logs/bank.log");
+        Path auditFile = logFile.resolveSibling("security-audit.jsonl");
+        String password = "private-password";
+        String input = String.join("\n",
+                "2", "alice", password, password,
+                "2", "USD", "2", "1000.00", "12",
+                "2", "EUR", "3", "2030-06-01", "0.05", "y",
+                "1", "6", "");
+
+        String console = runMain(stateFile, logFile, input);
+
+        assertTrue(console.contains(FIRST_ACCOUNT_NUMBER + " | CREDIT | 0 USD | ACTIVE | 0 transaction(s)"), console);
+        assertTrue(console.contains("UA000000000000000002 | DEPOSIT | 0 EUR | ACTIVE | 0 transaction(s)"), console);
+        assertTrue(console.contains("Account " + FIRST_ACCOUNT_NUMBER + " (CREDIT) was added to alice."));
+        assertFalse(console.contains("Could not open the account"), console);
+
+        List<JsonNode> events = readAudit(auditFile);
+        assertEquals(5, events.size());
+        assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
+        assertEvent(events.get(1), "alice", "REGISTER", null, "SUCCESS");
+        assertEvent(events.get(2), "alice", "OPEN_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(3), "alice", "OPEN_ACCOUNT", "UA000000000000000002", "SUCCESS");
+        assertEvent(events.get(4), "alice", "SAVE_STATE", null, "SUCCESS");
+    }
+
+    @Test
+    void shouldRejectInvalidAccountParametersAndKeepAccountListUnchanged() throws Exception {
+        Path stateFile = tempDir.resolve("state.json");
+        Path logFile = tempDir.resolve("logs/bank.log");
+        Path auditFile = logFile.resolveSibling("security-audit.jsonl");
+        String password = "private-password";
+        String input = String.join("\n",
+                "2", "alice", password, password,
+                "2", "USD", "2", "-100.00", "12",
+                "2", "EUR", "3", "2030-06-01", "0.05", "x",
+                "1", "6", "");
+
+        String console = runMain(stateFile, logFile, input);
+
+        assertTrue(console.contains("Could not open the account: Credit limit cannot be negative"), console);
+        assertTrue(console.contains("Expected 'y' or 'n', got 'x'"), console);
+        assertTrue(console.contains("User 'alice' has no accounts yet."), console);
+
+        List<JsonNode> events = readAudit(auditFile);
+        assertEquals(5, events.size());
+        assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
+        assertEvent(events.get(1), "alice", "REGISTER", null, "SUCCESS");
+        assertEvent(events.get(2), "alice", "OPEN_ACCOUNT", null, "FAILURE");
+        assertEvent(events.get(3), "alice", "OPEN_ACCOUNT", null, "FAILURE");
+        assertEvent(events.get(4), "alice", "SAVE_STATE", null, "SUCCESS");
     }
 
     private List<JsonNode> readAudit(Path auditFile) throws IOException {

@@ -1,6 +1,5 @@
 package bank;
 
-import bank.account.AccountNumberGenerator;
 import bank.account.*;
 import bank.logging.BankLogging;
 import bank.logging.SecurityAuditLogger;
@@ -12,6 +11,8 @@ import bank.storage.StorageService;
 
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -52,10 +53,13 @@ public class Main {
         LOGGER.info("Loaded " + users.size() + " user(s) from " + stateFile.toAbsolutePath());
         SYSTEM_LOGGER.info("Bank state loaded");
 
+        // Resume account numbering after the highest stored number so newly opened
+        // accounts never reuse an existing number, also across restarts.
         AccountNumberGenerator accountNumbers = new AccountNumberGenerator(users.values().stream()
                 .flatMap(user -> user.getAccounts().stream())
                 .map(BankAccount::getAccountNumber)
                 .toList());
+
         AuthService authService = new AuthService(users);
         if (users.isEmpty()) {
             authService.register(DEMO_USER_ID, DEMO_PASSWORD);
@@ -202,7 +206,7 @@ public class Main {
 
                     -------------- Main menu ---------------
                       1) Show my accounts
-                      2) Open a new checking account
+                      2) Open a new account
                       3) Block an account
                       4) Unblock an account
                       5) Deposit money
@@ -250,17 +254,84 @@ public class Main {
             LOGGER.info("End of input reached.");
             return;
         }
+        String typeInput = readValue(scanner, """
+                Account type:
+                  1) Checking account
+                  2) Credit account
+                  3) Term deposit account
+                Choose an option (1-3): """);
+        if (typeInput == null) {
+            LOGGER.info("End of input reached.");
+            return;
+        }
 
-        String accountNumber = null;
+        String creditLimitInput = null;
+        String interestRateInput = null;
+        String maturityDateInput = null;
+        String earlyWithdrawalInput = null;
+
         try {
+            switch (typeInput) {
+                case "2" -> {
+                    creditLimitInput = readValue(scanner,
+                            "Credit limit (maximum overdraft, must be non-negative, e.g. 1000.00): ");
+                    if (creditLimitInput == null) {
+                        LOGGER.info("End of input reached.");
+                        return;
+                    }
+                    interestRateInput = readValue(scanner,
+                            "Annual interest rate in percent (e.g. 12 for 12% per year): ");
+                    if (interestRateInput == null) {
+                        LOGGER.info("End of input reached.");
+                        return;
+                    }
+                }
+                case "3" -> {
+                    maturityDateInput = readValue(scanner,
+                            "Maturity date (YYYY-MM-DD, today or later): ");
+                    if (maturityDateInput == null) {
+                        LOGGER.info("End of input reached.");
+                        return;
+                    }
+                    interestRateInput = readValue(scanner,
+                            "Annual interest rate as a decimal fraction (e.g. 0.05 for 5% per year): ");
+                    if (interestRateInput == null) {
+                        LOGGER.info("End of input reached.");
+                        return;
+                    }
+                    earlyWithdrawalInput = readValue(scanner,
+                            "Allow early withdrawal before maturity? (y/n): ");
+                    if (earlyWithdrawalInput == null) {
+                        LOGGER.info("End of input reached.");
+                        return;
+                    }
+                }
+                case "1" -> {
+                }
+                default -> throw new IllegalArgumentException(
+                        "Unknown account type '" + typeInput + "', choose 1, 2 or 3");
+            }
+
             Currency currency = parseCurrency(currencyInput);
-            accountNumber = accountNumbers.next();
-            BankAccount account = new CheckingAccount(accountNumber, user.getUserId(), currency);
+            BigDecimal creditLimit = creditLimitInput == null ? null : parseNonNegative(creditLimitInput, "Credit limit");
+            BigDecimal interestRate = interestRateInput == null ? null : parseNonNegative(interestRateInput, "Interest rate");
+            LocalDate maturityDate = maturityDateInput == null ? null : parseMaturityDate(maturityDateInput);
+            boolean earlyWithdrawal = earlyWithdrawalInput != null && parseEarlyWithdrawalFlag(earlyWithdrawalInput);
+
+            String accountNumber = accountNumbers.next();
+            BankAccount account = switch (typeInput) {
+                case "1" -> new CheckingAccount(accountNumber, user.getUserId(), currency);
+                case "2" -> new CreditAccount(accountNumber, user.getUserId(), currency, creditLimit, interestRate);
+                case "3" -> new DepositAccount(accountNumber, user.getUserId(), currency,
+                        maturityDate, earlyWithdrawal, interestRate);
+                default -> throw new IllegalStateException("Unknown account type '" + typeInput + "'");
+            };
             user.addAccount(account);
             SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, accountNumber, Status.SUCCESS);
-            LOGGER.info("Account " + account.getAccountNumber() + " was added to " + user.getUserId() + ".");
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, accountNumber, Status.FAILURE);
+            LOGGER.info("Account " + accountNumber + " (" + JsonPersistence.typeNameOf(account.getClass())
+                    + ") was added to " + user.getUserId() + ".");
+        } catch (IllegalArgumentException e) {
+            SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, null, Status.FAILURE);
             LOGGER.warning("Could not open the account: " + e.getMessage());
         }
     }
@@ -319,12 +390,58 @@ public class Main {
     }
 
     private static Currency parseCurrency(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("Currency cannot be blank, use one of EUR, USD, UAH");
+        }
         try {
             return Currency.valueOf(value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "Currency '" + value + "' is not supported, use one of EUR, USD, UAH");
         }
+    }
+
+    private static BigDecimal parseNonNegative(String input, String fieldName) {
+        if (input == null || input.isBlank()) {
+            throw new IllegalArgumentException(fieldName + " cannot be blank");
+        }
+        BigDecimal value;
+        try {
+            value = new BigDecimal(input);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("'" + input + "' is not a valid " + fieldName.toLowerCase(Locale.ROOT));
+        }
+        if (value.signum() < 0) {
+            throw new IllegalArgumentException(fieldName + " cannot be negative");
+        }
+        return value;
+    }
+
+    private static LocalDate parseMaturityDate(String input) {
+        if (input == null || input.isBlank()) {
+            throw new IllegalArgumentException("Maturity date cannot be blank");
+        }
+        LocalDate date;
+        try {
+            date = LocalDate.parse(input);
+        } catch (DateTimeParseException e) {
+            throw new IllegalArgumentException("'" + input + "' is not a valid date, use YYYY-MM-DD");
+        }
+        if (date.isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("Maturity date must be today or later");
+        }
+        return date;
+    }
+
+    private static boolean parseEarlyWithdrawalFlag(String input) {
+        if (input == null || input.isBlank()) {
+            throw new IllegalArgumentException("Early withdrawal flag cannot be blank, use y/n");
+        }
+        return switch (input.trim().toLowerCase(Locale.ROOT)) {
+            case "y", "yes", "true" -> true;
+            case "n", "no", "false" -> false;
+            default -> throw new IllegalArgumentException("Expected 'y' or 'n', got '" + input + "'");
+        };
     }
 
     /**

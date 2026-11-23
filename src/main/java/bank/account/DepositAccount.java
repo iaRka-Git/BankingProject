@@ -20,9 +20,9 @@ public class DepositAccount extends BankAccount {
     private static final String EARLY_WITHDRAWAL_COMMENT = "Early withdrawal (penalty applied)";
     private static final String INTEREST_ACCRUAL_COMMENT = "Interest accrual for deposit";
 
-    private final LocalDate maturityDate;
-    private final boolean allowEarlyWithdrawal;
-    private final BigDecimal interestRate;
+    private LocalDate maturityDate;
+    private boolean allowEarlyWithdrawal;
+    private BigDecimal interestRate;
 
     /**
      * Creates a new deposit account.
@@ -44,11 +44,7 @@ public class DepositAccount extends BankAccount {
 
         this.maturityDate = Objects.requireNonNull(maturityDate, "Maturity date cannot be null");
         this.allowEarlyWithdrawal = allowEarlyWithdrawal;
-        this.interestRate = Objects.requireNonNull(interestRate, "Interest rate cannot be null");
-
-        if (interestRate.compareTo(BigDecimal.ZERO) < 0) {
-            throw new IllegalArgumentException("Interest rate cannot be negative");
-        }
+        this.interestRate = requireNonNegative(interestRate, "Interest rate cannot be negative");
     }
 
 
@@ -63,6 +59,25 @@ public class DepositAccount extends BankAccount {
 
     public BigDecimal getInterestRate() {
         return interestRate;
+    }
+
+    /**
+     * Reinstates the deposit terms that were persisted earlier.
+     *
+     * <p>Intended for the persistence layer only, so that a restored deposit account
+     * keeps its original maturity date, early withdrawal flag and interest rate.
+     * Regular operations go through the constructor and {@link #withdraw(BigDecimal, String)}.</p>
+     *
+     * @param maturityDate        the persisted maturity date, non-null
+     * @param allowEarlyWithdrawal the persisted early withdrawal flag
+     * @param interestRate        the persisted interest rate, non-null and non-negative
+     * @throws NullPointerException     if {@code maturityDate} or {@code interestRate} is null
+     * @throws IllegalArgumentException if {@code interestRate} is negative
+     */
+    public void restoreDepositTerms(LocalDate maturityDate, boolean allowEarlyWithdrawal, BigDecimal interestRate) {
+        this.maturityDate = Objects.requireNonNull(maturityDate, "Maturity date cannot be null");
+        this.allowEarlyWithdrawal = allowEarlyWithdrawal;
+        this.interestRate = requireNonNegative(interestRate, "Interest rate cannot be negative");
     }
 
     /**
@@ -130,5 +145,13 @@ public class DepositAccount extends BankAccount {
         balance = balance.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
         String txComment = (comment != null && !comment.isBlank()) ? comment : EARLY_WITHDRAWAL_COMMENT;
         recordTransaction(totalDeduction.negate(), txComment);
+    }
+
+    private static BigDecimal requireNonNegative(BigDecimal value, String message) {
+        Objects.requireNonNull(value, message);
+        if (value.signum() < 0) {
+            throw new IllegalArgumentException(message);
+        }
+        return value;
     }
 }
