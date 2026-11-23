@@ -41,7 +41,7 @@ class MainLoggingTest {
         String input = String.join("\n", "unknown", "2", "клієнт", password, password,
                 "2", "UAH", "1", "5", FIRST_ACCOUNT_NUMBER, "125.50",
                 "3", FIRST_ACCOUNT_NUMBER, "5", FIRST_ACCOUNT_NUMBER, "999.99",
-                "4", FIRST_ACCOUNT_NUMBER, "1", "6", "");
+                "4", FIRST_ACCOUNT_NUMBER, "1", "9", "");
 
         String console = runMain(stateFile, logFile, input);
         String firstLog = Files.readString(logFile);
@@ -86,7 +86,7 @@ class MainLoggingTest {
 
         String nextInput = String.join("\n", "2", "клієнт", password, password,
                 "1", "клієнт", "wrong-password", "клієнт", password,
-                "5", "UA404", "125.50", "6", "");
+                "5", "UA404", "125.50", "9", "");
         runMain(stateFile, logFile, nextInput);
 
         String secondLog = Files.readString(logFile);
@@ -128,7 +128,7 @@ class MainLoggingTest {
         Path logFile = tempDir.resolve("logs/bank.log");
 
         String console = runMain(blockedParent.resolve("state.json"), logFile,
-                "1\ncustomer-001\nsecret123\n6\n");
+                "1\ncustomer-001\nsecret123\n9\n");
 
         List<JsonNode> events = readAudit(logFile.resolveSibling("security-audit.jsonl"));
         assertEquals(3, events.size());
@@ -167,7 +167,7 @@ class MainLoggingTest {
         User user = new User(actor, AuthService.hashPassword(password));
         user.addAccount(new CheckingAccount(accountNumber, actor, Currency.UAH));
         new JsonPersistence(stateFile).saveUsers(Map.of(actor, user));
-        String input = String.join("\n", "1", actor, password, "5", accountNumber, "1", "6", "");
+        String input = String.join("\n", "1", actor, password, "5", accountNumber, "1", "9", "");
 
         runMain(stateFile, logFile, input);
 
@@ -192,9 +192,9 @@ class MainLoggingTest {
         storage.saveUsers(Map.of("alice", alice));
 
         String firstRun = runMain(stateFile, logFile,
-                String.join("\n", "1", "alice", password, "2", "UAH", "1", "2", "USD", "1", "6", ""));
+                String.join("\n", "1", "alice", password, "2", "UAH", "1", "2", "USD", "1", "9", ""));
         String secondRun = runMain(stateFile, logFile,
-                String.join("\n", "2", "bob", password, password, "2", "EUR", "1", "6", ""));
+                String.join("\n", "2", "bob", password, password, "2", "EUR", "1", "9", ""));
 
         assertFalse(firstRun.contains("Account number:"));
         assertFalse(secondRun.contains("Account number:"));
@@ -242,7 +242,7 @@ class MainLoggingTest {
                 "2", "alice", password, password,
                 "2", "USD", "2", "1000.00", "12",
                 "2", "EUR", "3", "2030-06-01", "0.05", "y",
-                "1", "6", "");
+                "1", "9", "");
 
         String console = runMain(stateFile, logFile, input);
 
@@ -270,7 +270,7 @@ class MainLoggingTest {
                 "2", "alice", password, password,
                 "2", "USD", "2", "-100.00", "12",
                 "2", "EUR", "3", "2030-06-01", "0.05", "x",
-                "1", "6", "");
+                "1", "9", "");
 
         String console = runMain(stateFile, logFile, input);
 
