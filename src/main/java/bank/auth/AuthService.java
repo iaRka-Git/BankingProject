@@ -125,14 +125,7 @@ public class AuthService {
      * @throws IllegalStateException    when the user id is already taken
      */
     public User register(String userId, String rawPassword) {
-        try {
-            User user = registerUser(userId, rawPassword);
-            SecurityAuditLogger.record(user.getUserId(), Action.REGISTER, null, Status.SUCCESS);
-            return user;
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            SecurityAuditLogger.record(userId, Action.REGISTER, null, Status.FAILURE);
-            throw e;
-        }
+        return registerUser(userId, rawPassword);
     }
 
     private User registerUser(String userId, String rawPassword) {

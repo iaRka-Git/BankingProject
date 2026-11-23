@@ -17,13 +17,13 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Scanner;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.logging.Level;
@@ -69,38 +69,43 @@ public class Main {
                 .toList());
 
         AuthService authService = new AuthService(users);
+        AtomicReference<String> sessionActor = new AtomicReference<>("system");
         if (users.isEmpty()) {
-            authService.register(DEMO_USER_ID, DEMO_PASSWORD);
-            LOGGER.info("No user was found, a demo user was created: "
-                    + DEMO_USER_ID
-                    + " (choose 'Register a new user' to create your own)");
+            boolean saved = mutateAndSave(users, storage, sessionActor,
+                    () -> {
+                        authService.register(DEMO_USER_ID, DEMO_PASSWORD);
+                        sessionActor.set(DEMO_USER_ID);
+                    },
+                    Action.REGISTER, null);
+            if (saved) {
+                LOGGER.info("No user was found, a demo user was created: "
+                        + DEMO_USER_ID
+                        + " (choose 'Register a new user' to create your own)");
+            }
         }
 
-        AtomicBoolean stateSaved =   new AtomicBoolean(false);
-        AtomicReference<String> sessionActor = new AtomicReference<>("system");
         Runnable saveState = () -> {
-            if (stateSaved.compareAndSet(false, true)) {
-                try {
-                    storage.saveUsers(users);
-                    SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.SUCCESS);
-                    LOGGER.info("Bank state saved to " + stateFile.toAbsolutePath());
-                    SYSTEM_LOGGER.info("Bank state saved");
-                } catch (StorageException e) {
-                    SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.FAILURE);
-                    SYSTEM_LOGGER.log(Level.SEVERE, "Could not save the bank state", e);
-                }
+            try {
+                storage.saveUsers(users);
+                SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.SUCCESS);
+                LOGGER.info("Bank state saved to " + stateFile.toAbsolutePath());
+                SYSTEM_LOGGER.info("Bank state saved");
+            } catch (StorageException e) {
+                SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.FAILURE);
+                LOGGER.severe("Could not save the bank state");
+                SYSTEM_LOGGER.log(Level.SEVERE, "Could not save the bank state", e);
             }
         };
         // Also persist the state when the JVM is stopped with Ctrl+C or by the IDE
         Runtime.getRuntime().addShutdownHook(new Thread(saveState, "bank-state-saver"));
 
         try (Scanner scanner = new Scanner(System.in)) {
-            User user = entryMenu(authService, scanner);
+            User user = entryMenu(authService, scanner, users, storage, sessionActor);
             if (user != null) {
                 sessionActor.set(user.getUserId());
                 LOGGER.info("Welcome, " + user.getUserId() + "!");
                 showAccounts(user);
-                runMenu(user, users, scanner, accountNumbers);
+                runMenu(user, users, scanner, accountNumbers, storage, sessionActor);
             }
         }
         saveState.run();
@@ -113,7 +118,8 @@ public class Main {
      * @return the authenticated user, or {@code null} when the customer chose to exit or the
      *         input ended
      */
-    private static User entryMenu(AuthService authService, Scanner scanner) {
+    private static User entryMenu(AuthService authService, Scanner scanner, Map<String, User> users,
+                                  StorageService storage, AtomicReference<String> sessionActor) {
         while (true) {
             LOGGER.info("""
 
@@ -137,7 +143,7 @@ public class Main {
                     }
                 }
                 case "2" -> {
-                    User user = register(authService, scanner);
+                    User user = register(authService, scanner, users, storage, sessionActor);
                     if (user != null) {
                         return user;
                     }
@@ -156,7 +162,8 @@ public class Main {
      * @return the newly registered user, or {@code null} when the input was invalid, the user id
      *         was already taken or the input ended
      */
-    private static User register(AuthService authService, Scanner scanner) {
+    private static User register(AuthService authService, Scanner scanner, Map<String, User> users,
+                                 StorageService storage, AtomicReference<String> sessionActor) {
         String userId = readValue(scanner, "New user ID: ");
         if (userId == null) {
             LOGGER.info("End of input reached.");
@@ -182,10 +189,21 @@ public class Main {
         }
 
         try {
-            User user = authService.register(userId, password);
-            LOGGER.info("User '" + user.getUserId() + "' was registered.");
-            return user;
+            User[] registered = new User[1];
+            boolean saved = mutateAndSave(users, storage, sessionActor,
+                    () -> {
+                        registered[0] = authService.register(userId, password);
+                        sessionActor.set(registered[0].getUserId());
+                    },
+                    Action.REGISTER, null);
+            if (saved) {
+                sessionActor.set(registered[0].getUserId());
+                LOGGER.info("User '" + registered[0].getUserId() + "' was registered.");
+                return registered[0];
+            }
+            return null;
         } catch (IllegalArgumentException | IllegalStateException e) {
+            SecurityAuditLogger.record(userId, Action.REGISTER, null, Status.FAILURE);
             LOGGER.warning("Could not register the user: " + e.getMessage());
             return null;
         }
@@ -208,7 +226,8 @@ public class Main {
     }
 
     private static void runMenu(User user, Map<String, User> users, Scanner scanner,
-                                AccountNumberGenerator accountNumbers) {
+                                AccountNumberGenerator accountNumbers, StorageService storage,
+                                AtomicReference<String> sessionActor) {
         boolean running = true;
         while (running) {
             LOGGER.info("""
@@ -234,12 +253,12 @@ public class Main {
             String option = scanner.nextLine().trim();
             switch (option) {
                 case "1" -> showAccounts(user);
-                case "2" -> openAccount(user, scanner, accountNumbers);
-                case "3" -> changeAccountState(user, scanner, false);
-                case "4" -> changeAccountState(user, scanner, true);
-                case "5" -> deposit(user, scanner);
-                case "6" -> withdraw(user, scanner);
-                case "7" -> transfer(user, users, scanner);
+                case "2" -> openAccount(user, users, scanner, accountNumbers, storage, sessionActor);
+                case "3" -> changeAccountState(user, users, scanner, false, storage, sessionActor);
+                case "4" -> changeAccountState(user, users, scanner, true, storage, sessionActor);
+                case "5" -> deposit(user, users, scanner, storage, sessionActor);
+                case "6" -> withdraw(user, users, scanner, storage, sessionActor);
+                case "7" -> transfer(user, users, scanner, storage, sessionActor);
                 case "8" -> showStatement(user, scanner);
                 case "9" -> running = false;
                 default -> LOGGER.warning("Unknown option '" + option + "', please try again.");
@@ -263,7 +282,9 @@ public class Main {
                     account.getStatement().size()));
         }
     }
-    private static void openAccount(User user, Scanner scanner, AccountNumberGenerator accountNumbers) {
+    private static void openAccount(User user, Map<String, User> users, Scanner scanner,
+                                    AccountNumberGenerator accountNumbers, StorageService storage,
+                                    AtomicReference<String> sessionActor) {
         String currencyInput = readValue(scanner, "Currency (EUR, USD, UAH): ");
         if (currencyInput == null) {
             LOGGER.info("End of input reached.");
@@ -341,17 +362,22 @@ public class Main {
                         maturityDate, earlyWithdrawal, interestRate);
                 default -> throw new IllegalStateException("Unknown account type '" + typeInput + "'");
             };
-            user.addAccount(account);
-            SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, accountNumber, Status.SUCCESS);
-            LOGGER.info("Account " + accountNumber + " (" + JsonPersistence.typeNameOf(account.getClass())
-                    + ") was added to " + user.getUserId() + ".");
+            boolean saved = mutateAndSave(users, storage, sessionActor,
+                    () -> user.addAccount(account),
+                    Action.OPEN_ACCOUNT, accountNumber);
+            if (saved) {
+                LOGGER.info("Account " + accountNumber + " (" + JsonPersistence.typeNameOf(account.getClass())
+                        + ") was added to " + user.getUserId() + ".");
+            }
         } catch (IllegalArgumentException e) {
             SecurityAuditLogger.record(user.getUserId(), Action.OPEN_ACCOUNT, null, Status.FAILURE);
             LOGGER.warning("Could not open the account: " + e.getMessage());
         }
     }
 
-    private static void changeAccountState(User user, Scanner scanner, boolean active) {
+    private static void changeAccountState(User user, Map<String, User> users, Scanner scanner,
+                                           boolean active, StorageService storage,
+                                           AtomicReference<String> sessionActor) {
         Action action = active ? Action.UNBLOCK_ACCOUNT : Action.BLOCK_ACCOUNT;
         String accountNumber = readValue(scanner, "Account number: ");
         if (accountNumber == null) {
@@ -360,13 +386,17 @@ public class Main {
         }
 
         try {
-            if (active) {
-                user.unblockAccount(accountNumber);
-                SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.SUCCESS);
+            boolean saved = mutateAndSave(users, storage, sessionActor,
+                    () -> {
+                        if (active) {
+                            user.unblockAccount(accountNumber);
+                        } else {
+                            user.blockAccount(accountNumber);
+                        }
+                    }, action, accountNumber);
+            if (saved && active) {
                 LOGGER.info("Account " + accountNumber + " was unblocked.");
-            } else {
-                user.blockAccount(accountNumber);
-                SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.SUCCESS);
+            } else if (saved) {
                 LOGGER.info("Account " + accountNumber + " was blocked.");
             }
         } catch (IllegalArgumentException e) {
@@ -375,18 +405,24 @@ public class Main {
         }
     }
 
-    private static void deposit(User user, Scanner scanner) {
+    private static void deposit(User user, Map<String, User> users, Scanner scanner,
+                                StorageService storage, AtomicReference<String> sessionActor) {
         applyAccountAmount(user, scanner, Action.DEPOSIT, "Deposit failed",
-                (account, amount) -> account.deposit(amount, "Console deposit"));
+                (account, amount) -> account.deposit(amount, "Console deposit"),
+                users, storage, sessionActor);
     }
 
-    private static void withdraw(User user, Scanner scanner) {
+    private static void withdraw(User user, Map<String, User> users, Scanner scanner,
+                                 StorageService storage, AtomicReference<String> sessionActor) {
         applyAccountAmount(user, scanner, Action.WITHDRAW, "Withdrawal failed",
-                (account, amount) -> account.withdraw(amount, "Console withdrawal"));
+                (account, amount) -> account.withdraw(amount, "Console withdrawal"),
+                users, storage, sessionActor);
     }
 
     private static void applyAccountAmount(User user, Scanner scanner, Action action, String failureLabel,
-                                           BiConsumer<BankAccount, BigDecimal> operation) {
+                                           BiConsumer<BankAccount, BigDecimal> operation,
+                                           Map<String, User> users, StorageService storage,
+                                           AtomicReference<String> sessionActor) {
         String accountNumber = readValue(scanner, "Account number: ");
         String amount = readValue(scanner, "Amount: ");
         if (accountNumber == null || amount == null) {
@@ -402,10 +438,15 @@ public class Main {
         }
 
         try {
-            operation.accept(account.get(), new BigDecimal(amount));
-            SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.SUCCESS);
-            LOGGER.info("New balance of " + accountNumber + ": "
-                    + account.get().getBalance() + " " + account.get().getCurrency());
+            BigDecimal parsedAmount = new BigDecimal(amount);
+            BankAccount target = account.get();
+            boolean saved = mutateAndSave(users, storage, sessionActor,
+                    () -> operation.accept(target, parsedAmount),
+                    action, accountNumber);
+            if (saved) {
+                LOGGER.info("New balance of " + accountNumber + ": "
+                        + target.getBalance() + " " + target.getCurrency());
+            }
         } catch (NumberFormatException e) {
             SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.FAILURE);
             LOGGER.warning("'" + amount + "' is not a valid amount.");
@@ -415,7 +456,74 @@ public class Main {
         }
     }
 
-    private static void transfer(User user, Map<String, User> users, Scanner scanner) {
+    private static boolean mutateAndSave(Map<String, User> users, StorageService storage,
+                                         AtomicReference<String> sessionActor, Runnable mutation,
+                                         Action action, String target) {
+        Map<String, Boolean> existingUsers = new LinkedHashMap<>();
+        Map<String, List<String>> existingAccounts = new LinkedHashMap<>();
+        List<AccountSnapshot> accountSnapshots = new ArrayList<>();
+        String previousActor = sessionActor.get();
+
+        for (Map.Entry<String, User> entry : users.entrySet()) {
+            existingUsers.put(entry.getKey(), true);
+            List<String> accountNumbers = new ArrayList<>();
+            for (BankAccount account : entry.getValue().getAccounts()) {
+                accountNumbers.add(account.getAccountNumber());
+                accountSnapshots.add(new AccountSnapshot(account,
+                        account.getBalance(), account.isActive(), account.getStatement()));
+            }
+            existingAccounts.put(entry.getKey(), accountNumbers);
+        }
+
+        try {
+            mutation.run();
+            storage.saveUsers(users);
+            SecurityAuditLogger.record(sessionActor.get(), action, target, Status.SUCCESS);
+            SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.SUCCESS);
+            SYSTEM_LOGGER.info("Bank state saved");
+            return true;
+        } catch (StorageException e) {
+            rollback(users, existingUsers, existingAccounts, accountSnapshots);
+            sessionActor.set(previousActor);
+            SecurityAuditLogger.record(sessionActor.get(), action, target, Status.FAILURE);
+            SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.FAILURE);
+            LOGGER.severe("Could not save the bank state");
+            SYSTEM_LOGGER.log(Level.SEVERE, "Could not save the bank state", e);
+            return false;
+        } catch (RuntimeException e) {
+            rollback(users, existingUsers, existingAccounts, accountSnapshots);
+            throw e;
+        }
+    }
+
+    private static void rollback(Map<String, User> users, Map<String, Boolean> existingUsers,
+                                 Map<String, List<String>> existingAccounts,
+                                 List<AccountSnapshot> accountSnapshots) {
+        for (User user : users.values()) {
+            List<String> originalNumbers = existingAccounts.getOrDefault(user.getUserId(), List.of());
+            List<BankAccount> currentAccounts = new ArrayList<>(user.getAccounts());
+            for (BankAccount account : currentAccounts) {
+                if (!originalNumbers.contains(account.getAccountNumber())) {
+                    user.removeAccount(account);
+                }
+            }
+        }
+        for (Map.Entry<String, User> entry : new ArrayList<>(users.entrySet())) {
+            if (!existingUsers.containsKey(entry.getKey())) {
+                users.remove(entry.getKey());
+            }
+        }
+        for (AccountSnapshot snapshot : accountSnapshots) {
+            snapshot.account.restoreState(snapshot.balance, snapshot.active, snapshot.transactions);
+        }
+    }
+
+    private record AccountSnapshot(BankAccount account, BigDecimal balance, boolean active,
+                                   List<BankAccount.Transaction> transactions) {
+    }
+
+    private static void transfer(User user, Map<String, User> users, Scanner scanner,
+                                 StorageService storage, AtomicReference<String> sessionActor) {
         String sourceAccountNumber = readValue(scanner, "Source account number: ");
         String recipientAccountNumber = readValue(scanner, "Recipient account number: ");
         String amount = readValue(scanner, "Amount: ");
@@ -442,12 +550,17 @@ public class Main {
 
         try {
             BigDecimal transferAmount = new BigDecimal(amount);
-            sourceAccount.get().transfer(recipientAccount.get(), transferAmount, null);
-            SecurityAuditLogger.record(user.getUserId(), Action.TRANSFER, auditTarget, Status.SUCCESS);
-            LOGGER.info("Transferred " + transferAmount + " " + sourceAccount.get().getCurrency()
-                    + " from " + sourceAccountNumber + " to " + recipientAccountNumber
-                    + ". New balance of " + sourceAccountNumber + ": "
-                    + sourceAccount.get().getBalance() + " " + sourceAccount.get().getCurrency());
+            BankAccount source = sourceAccount.get();
+            BankAccount recipient = recipientAccount.get();
+            boolean saved = mutateAndSave(users, storage, sessionActor,
+                    () -> source.transfer(recipient, transferAmount, null),
+                    Action.TRANSFER, auditTarget);
+            if (saved) {
+                LOGGER.info("Transferred " + transferAmount + " " + source.getCurrency()
+                        + " from " + sourceAccountNumber + " to " + recipientAccountNumber
+                        + ". New balance of " + sourceAccountNumber + ": "
+                        + source.getBalance() + " " + source.getCurrency());
+            }
         } catch (NumberFormatException e) {
             SecurityAuditLogger.record(user.getUserId(), Action.TRANSFER, auditTarget, Status.FAILURE);
             LOGGER.warning("'" + amount + "' is not a valid amount.");

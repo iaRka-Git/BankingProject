@@ -70,15 +70,21 @@ class MainLoggingTest {
 
         String firstAudit = Files.readString(auditFile);
         List<JsonNode> events = readAudit(auditFile);
-        assertEquals(8, events.size());
+        assertEquals(14, events.size());
         assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(1), "клієнт", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(2), "клієнт", "OPEN_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
-        assertEvent(events.get(3), "клієнт", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
-        assertEvent(events.get(4), "клієнт", "BLOCK_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
-        assertEvent(events.get(5), "клієнт", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "FAILURE");
-        assertEvent(events.get(6), "клієнт", "UNBLOCK_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(1), "customer-001", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(2), "клієнт", "REGISTER", null, "SUCCESS");
+        assertEvent(events.get(3), "клієнт", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(4), "клієнт", "OPEN_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(5), "клієнт", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(6), "клієнт", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
         assertEvent(events.get(7), "клієнт", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(8), "клієнт", "BLOCK_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(9), "клієнт", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(10), "клієнт", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "FAILURE");
+        assertEvent(events.get(11), "клієнт", "UNBLOCK_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(12), "клієнт", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(13), "клієнт", "SAVE_STATE", null, "SUCCESS");
         assertFalse(firstAudit.contains(password));
         assertFalse(firstAudit.contains("secret123"));
         assertFalse(firstAudit.contains("125.50"));
@@ -99,12 +105,12 @@ class MainLoggingTest {
         assertFalse(secondLog.contains("wrong-password"));
         assertTrue(Files.readString(auditFile).startsWith(firstAudit));
         events = readAudit(auditFile);
-        assertEquals(13, events.size());
-        assertEvent(events.get(8), "клієнт", "REGISTER", null, "FAILURE");
-        assertEvent(events.get(9), "клієнт", "LOGIN", null, "FAILURE");
-        assertEvent(events.get(10), "клієнт", "LOGIN", null, "SUCCESS");
-        assertEvent(events.get(11), "клієнт", "DEPOSIT", "UA404", "FAILURE");
-        assertEvent(events.get(12), "клієнт", "SAVE_STATE", null, "SUCCESS");
+        assertEquals(19, events.size());
+        assertEvent(events.get(14), "клієнт", "REGISTER", null, "FAILURE");
+        assertEvent(events.get(15), "клієнт", "LOGIN", null, "FAILURE");
+        assertEvent(events.get(16), "клієнт", "LOGIN", null, "SUCCESS");
+        assertEvent(events.get(17), "клієнт", "DEPOSIT", "UA404", "FAILURE");
+        assertEvent(events.get(18), "клієнт", "SAVE_STATE", null, "SUCCESS");
     }
 
     @Test
@@ -133,8 +139,12 @@ class MainLoggingTest {
                 "1\ncustomer-001\nsecret123\n9\n");
 
         List<JsonNode> events = readAudit(logFile.resolveSibling("security-audit.jsonl"));
-        assertEquals(3, events.size());
-        assertEvent(events.getLast(), "customer-001", "SAVE_STATE", null, "FAILURE");
+        assertEquals(5, events.size());
+        assertEvent(events.get(0), "system", "REGISTER", null, "FAILURE");
+        assertEvent(events.get(1), "system", "SAVE_STATE", null, "FAILURE");
+        assertEvent(events.get(2), "customer-001", "LOGIN", null, "FAILURE");
+        assertEvent(events.get(3), "system", "SAVE_STATE", null, "FAILURE");
+        assertEvent(events.getLast(), "system", "SAVE_STATE", null, "FAILURE");
         assertTrue(console.contains("Could not save the bank state"));
         assertFalse(console.contains("Bank state saved"));
         assertFalse(Files.readString(logFile).contains("Bank state saved"));
@@ -174,10 +184,11 @@ class MainLoggingTest {
         runMain(stateFile, logFile, input);
 
         List<JsonNode> events = readAudit(logFile.resolveSibling("security-audit.jsonl"));
-        assertEquals(3, events.size());
+        assertEquals(4, events.size());
         assertEvent(events.get(0), actor, "LOGIN", null, "SUCCESS");
         assertEvent(events.get(1), actor, "DEPOSIT", accountNumber, "SUCCESS");
         assertEvent(events.get(2), actor, "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(3), actor, "SAVE_STATE", null, "SUCCESS");
     }
 
     @Test
@@ -254,12 +265,16 @@ class MainLoggingTest {
         assertFalse(console.contains("Could not open the account"), console);
 
         List<JsonNode> events = readAudit(auditFile);
-        assertEquals(5, events.size());
+        assertEquals(9, events.size());
         assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(1), "alice", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(2), "alice", "OPEN_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
-        assertEvent(events.get(3), "alice", "OPEN_ACCOUNT", "UA000000000000000002", "SUCCESS");
-        assertEvent(events.get(4), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(1), "customer-001", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(2), "alice", "REGISTER", null, "SUCCESS");
+        assertEvent(events.get(3), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(4), "alice", "OPEN_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(5), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(6), "alice", "OPEN_ACCOUNT", "UA000000000000000002", "SUCCESS");
+        assertEvent(events.get(7), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(8), "alice", "SAVE_STATE", null, "SUCCESS");
     }
 
     @Test
@@ -281,12 +296,14 @@ class MainLoggingTest {
         assertTrue(console.contains("User 'alice' has no accounts yet."), console);
 
         List<JsonNode> events = readAudit(auditFile);
-        assertEquals(5, events.size());
+        assertEquals(7, events.size());
         assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(1), "alice", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(2), "alice", "OPEN_ACCOUNT", null, "FAILURE");
-        assertEvent(events.get(3), "alice", "OPEN_ACCOUNT", null, "FAILURE");
-        assertEvent(events.get(4), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(1), "customer-001", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(2), "alice", "REGISTER", null, "SUCCESS");
+        assertEvent(events.get(3), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(4), "alice", "OPEN_ACCOUNT", null, "FAILURE");
+        assertEvent(events.get(5), "alice", "OPEN_ACCOUNT", null, "FAILURE");
+        assertEvent(events.get(6), "alice", "SAVE_STATE", null, "SUCCESS");
     }
 
     private List<JsonNode> readAudit(Path auditFile) throws IOException {

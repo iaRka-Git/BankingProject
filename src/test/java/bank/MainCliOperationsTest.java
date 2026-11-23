@@ -68,13 +68,18 @@ class MainCliOperationsTest {
 
         String auditText = Files.readString(auditFile);
         List<JsonNode> events = readAudit(auditFile);
-        assertEquals(6, events.size());
+        assertEquals(11, events.size());
         assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(1), "alice", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(2), "alice", "OPEN_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
-        assertEvent(events.get(3), "alice", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
-        assertEvent(events.get(4), "alice", "WITHDRAW", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(1), "customer-001", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(2), "alice", "REGISTER", null, "SUCCESS");
+        assertEvent(events.get(3), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(4), "alice", "OPEN_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
         assertEvent(events.get(5), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(6), "alice", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(7), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(8), "alice", "WITHDRAW", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(9), "alice", "SAVE_STATE", null, "SUCCESS");
+        assertEvent(events.get(10), "alice", "SAVE_STATE", null, "SUCCESS");
         assertFalse(auditText.contains("35.25"));
         assertFalse(auditText.contains("64.75"));
         assertFalse(auditText.contains("100.00"));
