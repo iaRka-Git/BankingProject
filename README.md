@@ -56,6 +56,7 @@ The optional first argument sets the JSON state file. Append `data/demo-state.js
 
 | Path | Contents |
 | --- | --- |
+| `docs/ARCHITECTURE.md` | High-level system architecture, component relationships, and runtime flows ([Issue #3](https://github.com/iaRka-Git/BankingProject/issues/3)). |
 | `src/main/java/bank/` | CLI entry point, authentication, users, and core account classes. |
 | `src/main/java/bank/account/` | Account number generator and term-deposit account. |
 | `src/main/java/bank/storage/` | JSON persistence and account factories. |
