@@ -42,7 +42,8 @@ On macOS or Linux:
 java -cp "target/classes:target/dependency/*" bank.Main
 ```
 
-The optional first argument sets the JSON state file. Append `data/demo-state.json` to the launch command to keep the demo data separate. The default is `data/bank-state.json`. The CLI saves state on exit.
+The optional first argument sets the JSON state file. Append `data/demo-state.json` to the launch command to keep the demo data separate. The default is `data/bank-state.json`. The CLI saves state after each successful change.
+Each JSON state file is intended for use by one application instance at a time.
 
 ### Try the CLI
 
