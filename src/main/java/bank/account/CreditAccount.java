@@ -1,4 +1,6 @@
-package bank;
+package bank.account;
+import bank.Currency;
+
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -79,7 +81,7 @@ public class CreditAccount extends BankAccount {
      * @throws IllegalArgumentException if {@code amount} is null or not positive
      */
     @Override
-    public void withdraw(BigDecimal amount, String comment) {
+    public synchronized void withdraw(BigDecimal amount, String comment) {
         if (!isActive()) {
             throw new IllegalStateException("Account is blocked or inactive.");
         }
@@ -110,7 +112,7 @@ public class CreditAccount extends BankAccount {
      * @return the positive fee charged, or {@link BigDecimal#ZERO} when the
      *         balance is not negative or the fee rounds to zero
      */
-    public BigDecimal chargeCreditInterest() {
+    public synchronized BigDecimal chargeCreditInterest() {
         if (this.balance.signum() >= 0) {
             return BigDecimal.ZERO;
         }

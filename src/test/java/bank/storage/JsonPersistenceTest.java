@@ -1,8 +1,7 @@
 package bank.storage;
 
 import bank.AuthService;
-import bank.BankAccount;
-import bank.CheckingAccount;
+import bank.account.*;
 import bank.Currency;
 import bank.SavingsAccount;
 import bank.User;

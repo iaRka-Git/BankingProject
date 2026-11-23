@@ -1,6 +1,6 @@
 package bank.storage;
 
-import bank.BankAccount;
+import bank.account.*;
 import bank.Currency;
 
 /**
@@ -8,7 +8,7 @@ import bank.Currency;
  *
  * <p>{@link BankAccount} is abstract, so every account type that has to survive a restart needs
  * a factory. Factories are registered under the type name of the account, which is derived from
- * its simple class name by dropping the conventional {@code Account} suffix and upper casing the
+ * its simple class name by dropping the conventional {@code Account} suffix and uppercasing the
  * rest: {@code CheckingAccount} is stored as {@code CHECKING}, {@code SavingsAccount} as
  * {@code SAVINGS}. That name is also the {@code type} field written to JSON.</p>
  */
