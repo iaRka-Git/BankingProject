@@ -1,6 +1,8 @@
 package bank;
 
 import bank.account.*;
+import bank.auth.AuthService;
+import bank.auth.AuthenticationException;
 import bank.logging.BankLogging;
 import bank.logging.SecurityAuditLogger;
 import bank.logging.SecurityAuditLogger.Action;
@@ -8,6 +10,7 @@ import bank.logging.SecurityAuditLogger.Status;
 import bank.storage.JsonPersistence;
 import bank.storage.StorageException;
 import bank.storage.StorageService;
+import bank.user.User;
 
 import java.math.BigDecimal;
 import java.nio.file.Path;

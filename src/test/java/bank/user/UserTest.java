@@ -1,4 +1,4 @@
-package bank;
+package bank.user;
 import bank.account.*;
 
 import org.junit.jupiter.api.BeforeEach;

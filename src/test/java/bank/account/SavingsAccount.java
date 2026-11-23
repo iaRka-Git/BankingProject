@@ -1,5 +1,4 @@
-package bank;
-import bank.account.*;
+package bank.account;
 
 import java.math.BigDecimal;
 

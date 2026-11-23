@@ -7,9 +7,9 @@
 
 Per the architectural baseline established in **Issue #1** and **Issue #2**:
 
-- **Modular, UI-independent banking core:** Account rules, balances, currency handling, and thread-safe transfers live inside `bank` and `bank.account` without depending on console I/O or JSON files.
+- **Modular, UI-independent banking core:** Account rules, balances, currency handling, and thread-safe transfers live inside `bank.account` without depending on console I/O or JSON files.
 - **Storage abstraction (`StorageService`):** Persistence is hidden behind an interface so the MVP uses atomic local JSON serialization (`JsonPersistence` via Jackson Databind) while keeping a clean migration path to a relational database (`DatabaseStorage`) in a later phase.
-- **Future client & admin separation:** Keeping authentication (`AuthService`), domain entities (`User`, `BankAccount`), and storage (`StorageService`) decoupled allows replacing or adding a REST API / admin console alongside the `bank.Main` CLI without rewriting core business logic.
+- **Future client & admin separation:** Keeping authentication (`bank.auth.AuthService`), domain entities (`bank.user.User`, `bank.account.BankAccount`), and storage (`bank.storage.StorageService`) decoupled allows replacing or adding a REST API / admin console alongside the `bank.Main` CLI without rewriting core business logic.
 - **Separation of logs and security audit:** Technical diagnostics go to `logs/bank.log` without sensitive customer data, while security and monetary outcomes are written to a dedicated JSON Lines audit trail (`logs/security-audit.jsonl`).
 
 ---
@@ -26,18 +26,18 @@ flowchart TB
     end
 
     subgraph App["Application & Authentication Layer"]
-        Auth["bank.AuthService (SHA-256 + Constant-Time Verify)"]
-        UserEntity["bank.User (Profile & Owned Accounts)"]
+        Auth["bank.auth.AuthService (SHA-256 + Constant-Time Verify)"]
+        UserEntity["bank.user.User (Profile & Owned Accounts)"]
         AcctGen["bank.account.AccountNumberGenerator (Sequential UA + 18 digits)"]
     end
 
-    subgraph Domain["Domain Core (bank.account & bank)"]
+    subgraph Domain["Domain Core (bank.account)"]
         BaseAcct["BankAccount (Abstract, Synchronized Ops, Lock-Ordered Transfer)"]
         Checking["CheckingAccount (Zero Overdraft Floor)"]
         Credit["CreditAccount (Credit Limit & Monthly Interest)"]
         Deposit["DepositAccount (Maturity Lock, Early Penalty & Accrual)"]
         Tx["BankAccount.Transaction (Amount, Timestamp, Comment)"]
-        Curr["bank.Currency (EUR, USD, UAH)"]
+        Curr["bank.account.Currency (EUR, USD, UAH)"]
     end
 
     subgraph Obs["Observability & Security Audit (bank.logging)"]

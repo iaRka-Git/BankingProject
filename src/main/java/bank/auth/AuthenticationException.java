@@ -1,4 +1,4 @@
-package bank;
+package bank.auth;
 
 /**
  * Thrown when a user cannot be authenticated, for example because the user id is unknown,

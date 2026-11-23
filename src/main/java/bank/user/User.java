@@ -1,4 +1,4 @@
-package bank;
+package bank.user;
 import bank.account.*;
 
 import java.util.ArrayList;
@@ -12,7 +12,7 @@ import java.util.Optional;
  *
  * <p>A user is identified by a unique {@code userId}, owns a collection of
  * {@link BankAccount bank accounts} and stores only the SHA-256 hash of the password
- * (see {@link AuthService#hashPassword(String)}) - never the password itself.</p>
+ * (see {@link bank.auth.AuthService#hashPassword(String)}) - never the password itself.</p>
  */
 // not divided by layers yet: controller/layer/repository. User functionality defined here
 public class User {

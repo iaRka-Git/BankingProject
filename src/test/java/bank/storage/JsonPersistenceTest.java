@@ -1,10 +1,8 @@
 package bank.storage;
 
-import bank.AuthService;
 import bank.account.*;
-import bank.Currency;
-import bank.SavingsAccount;
-import bank.User;
+import bank.auth.AuthService;
+import bank.user.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

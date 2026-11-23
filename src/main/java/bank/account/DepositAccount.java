@@ -1,5 +1,4 @@
 package bank.account;
-import bank.Currency;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;

@@ -58,11 +58,14 @@ The optional first argument sets the JSON state file. Append `data/demo-state.js
 | Path | Contents |
 | --- | --- |
 | `docs/ARCHITECTURE.md` | High-level system architecture, component relationships, and runtime flows ([Issue #3](https://github.com/iaRka-Git/BankingProject/issues/3)). |
-| `src/main/java/bank/` | CLI entry point, authentication, users, and core account classes. |
-| `src/main/java/bank/account/` | Account number generator and term-deposit account. |
-| `src/main/java/bank/storage/` | JSON persistence and account factories. |
+| `docs/PLAN.md` | Initial project coordination and domain contract plan. |
+| `src/main/java/bank/Main.java` | Console CLI entry point. |
+| `src/main/java/bank/account/` | Account hierarchy (`BankAccount`, `CheckingAccount`, `CreditAccount`, `DepositAccount`), `Currency`, and `AccountNumberGenerator`. |
+| `src/main/java/bank/auth/` | Authentication service and exceptions (`AuthService`, `AuthenticationException`). |
+| `src/main/java/bank/user/` | Customer domain entity (`User`). |
+| `src/main/java/bank/storage/` | JSON persistence (`JsonPersistence`, `StorageService`, `AccountFactory`). |
 | `src/main/java/bank/logging/` | Technical log and security audit configuration. |
-| `src/test/java/bank/` | Tests for account rules, authentication, persistence, and CLI flows. |
+| `src/test/java/bank/` | Unit and CLI integration tests organized by package (`account/`, `auth/`, `user/`, `storage/`). |
 
 The default technical log is `logs/bank.log`. Security events are written as JSON Lines to `logs/security-audit.jsonl`. Local state and logs are Git-ignored.
 
