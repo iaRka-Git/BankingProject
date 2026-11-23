@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -109,6 +111,33 @@ class JsonPersistenceTest {
         assertEquals("Salary", restoredChecking.getStatement().get(0).comment());
         assertEquals(0, new BigDecimal("-100.50").compareTo(restoredChecking.getStatement().get(1).amount()));
     }
+
+    @Test
+    void shouldSaveAndRestoreCreditAccountWithItsTerms() {
+        Path stateFile = tempDir.resolve("bank-state.json");
+        StorageService storage = new JsonPersistence(stateFile);
+        User user = new User(USER_ID, AuthService.hashPassword(PASSWORD));
+        CreditAccount credit = new CreditAccount("UA000000000000000010", USER_ID, Currency.UAH,
+                new BigDecimal("5000.00"), new BigDecimal("12"));
+        credit.withdraw(new BigDecimal("3000.00"), "Purchase");
+        user.addAccount(credit);
+        storage.saveUsers(Map.of(USER_ID, user));
+
+        BankAccount restoredAccount = new JsonPersistence(stateFile).loadUsers().get(USER_ID).getAccounts().get(0);
+
+        assertInstanceOf(CreditAccount.class, restoredAccount);
+        CreditAccount restoredCredit = (CreditAccount) restoredAccount;
+        assertEquals(new BigDecimal("5000.00"), restoredCredit.getCreditLimit());
+        assertEquals(new BigDecimal("12"), restoredCredit.getInterestRate());
+        assertEquals(new BigDecimal("-3000.00"), restoredCredit.getBalance());
+        assertTrue(restoredCredit.isActive());
+        assertEquals(1, restoredCredit.getStatement().size());
+
+        assertThrows(IllegalStateException.class,
+                () -> restoredCredit.withdraw(new BigDecimal("3000.01"), "Too much"));
+        assertEquals(new BigDecimal("-3000.00"), restoredCredit.getBalance());
+    }
+
     @Test
     void shouldRestoreBlockedFlagAfterRestart() {
         Path stateFile = tempDir.resolve("bank-state.json");
@@ -123,6 +152,115 @@ class JsonPersistenceTest {
 
         assertFalse(restoredUser.findAccount(BLOCKED_NUMBER).orElseThrow().isActive());
         assertTrue(restoredUser.findAccount(CHECKING_NUMBER).orElseThrow().isActive());
+    }
+
+    @Test
+    void shouldSaveAndRestoreDepositAccountWithItsTerms() {
+        Path stateFile = tempDir.resolve("bank-state.json");
+        StorageService storage = new JsonPersistence(stateFile);
+        User user = new User(USER_ID, AuthService.hashPassword(PASSWORD));
+        DepositAccount deposit = new DepositAccount("UA000000000000000011", USER_ID, Currency.EUR,
+                LocalDate.now().plusYears(1), true, new BigDecimal("0.05"));
+        deposit.deposit(new BigDecimal("1000.00"), "Savings");
+        user.addAccount(deposit);
+        storage.saveUsers(Map.of(USER_ID, user));
+
+        BankAccount restoredAccount = new JsonPersistence(stateFile).loadUsers().get(USER_ID).getAccounts().get(0);
+
+        assertInstanceOf(DepositAccount.class, restoredAccount);
+        DepositAccount restoredDeposit = (DepositAccount) restoredAccount;
+        assertEquals(LocalDate.now().plusYears(1), restoredDeposit.getMaturityDate());
+        assertTrue(restoredDeposit.isEarlyWithdrawalAllowed());
+        assertEquals(new BigDecimal("0.05"), restoredDeposit.getInterestRate());
+        assertEquals(new BigDecimal("1000.00"), restoredDeposit.getBalance());
+        assertTrue(restoredDeposit.isActive());
+        assertEquals(1, restoredDeposit.getStatement().size());
+    }
+
+    @Test
+    void shouldLoadExistingCheckingAccountJsonFile() throws IOException {
+        Path stateFile = tempDir.resolve("bank-state.json");
+        write(stateFile, """
+                { "version" : 1, "users" : [ {
+                  "userId" : "customer-001",
+                  "passwordHash" : "%s",
+                  "accounts" : [ {
+                    "type" : "CHECKING",
+                    "accountNumber" : "UA000000000000000001",
+                    "ownerId" : "customer-001",
+                    "currency" : "EUR",
+                    "active" : true,
+                    "balance" : 149.50,
+                    "statement" : [ {
+                      "amount" : -50.50,
+                      "timestamp" : "2026-09-28T10:15:30",
+                      "comment" : "Rent"
+                    } ]
+                  } ]
+                } ] }
+                """.formatted(AuthService.hashPassword(PASSWORD)));
+
+        Map<String, User> loaded = new JsonPersistence(stateFile).loadUsers();
+        User user = loaded.get("customer-001");
+        assertNotNull(user);
+        BankAccount account = user.findAccount("UA000000000000000001").orElseThrow();
+
+        assertInstanceOf(CheckingAccount.class, account);
+        assertEquals(Currency.EUR, account.getCurrency());
+        assertEquals(new BigDecimal("149.50"), account.getBalance());
+        assertTrue(account.isActive());
+        assertEquals(1, account.getStatement().size());
+        assertEquals(new BigDecimal("-50.50"), account.getStatement().get(0).amount());
+        assertEquals("Rent", account.getStatement().get(0).comment());
+    }
+
+    @Test
+    void shouldFailWithClearMessageForCreditAccountMissingTerms() throws IOException {
+        Path stateFile = tempDir.resolve("bank-state.json");
+        write(stateFile, """
+                { "version" : 1, "users" : [ {
+                  "userId" : "customer-001",
+                  "passwordHash" : "%s",
+                  "accounts" : [ {
+                    "type" : "CREDIT",
+                    "accountNumber" : "UA000000000000000010",
+                    "ownerId" : "customer-001",
+                    "currency" : "EUR",
+                    "active" : true,
+                    "balance" : 0,
+                    "statement" : [ ]
+                  } ]
+                } ] }
+                """.formatted(AuthService.hashPassword(PASSWORD)));
+
+        StorageException exception = assertThrows(StorageException.class,
+                () -> new JsonPersistence(stateFile).loadUsers());
+
+        assertTrue(exception.getMessage().contains("creditLimit"), exception.getMessage());
+    }
+
+    @Test
+    void shouldRestoreDepositAccountThatRejectsEarlyWithdrawalAfterRestart() {
+        Path stateFile = tempDir.resolve("bank-state.json");
+        StorageService storage = new JsonPersistence(stateFile);
+        User user = new User(USER_ID, AuthService.hashPassword(PASSWORD));
+        DepositAccount deposit = new DepositAccount("UA000000000000000012", USER_ID, Currency.UAH,
+                LocalDate.now().plusDays(30), false, new BigDecimal("0.03"));
+        deposit.deposit(new BigDecimal("1000.00"), "Savings");
+        user.addAccount(deposit);
+        storage.saveUsers(Map.of(USER_ID, user));
+
+        BankAccount restoredAccount = new JsonPersistence(stateFile).loadUsers().get(USER_ID).getAccounts().get(0);
+
+        assertInstanceOf(DepositAccount.class, restoredAccount);
+        DepositAccount restoredDeposit = (DepositAccount) restoredAccount;
+        assertFalse(restoredDeposit.isEarlyWithdrawalAllowed());
+
+        IllegalStateException exception = assertThrows(
+                IllegalStateException.class,
+                () -> restoredDeposit.withdraw(new BigDecimal("100.00")));
+        assertEquals("Withdrawals are locked until maturity date", exception.getMessage());
+        assertEquals(new BigDecimal("1000.00"), restoredDeposit.getBalance());
     }
 
     @Test
