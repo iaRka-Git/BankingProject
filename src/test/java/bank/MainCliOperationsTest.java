@@ -1,8 +1,9 @@
 package bank;
 
-import bank.account.BankAccount;
-import bank.account.CheckingAccount;
+import bank.account.*;
+import bank.auth.AuthService;
 import bank.storage.JsonPersistence;
+import bank.user.User;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;

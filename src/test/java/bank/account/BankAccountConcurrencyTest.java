@@ -1,6 +1,5 @@
 package bank.account;
 
-import bank.Currency;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

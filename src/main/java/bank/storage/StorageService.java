@@ -1,6 +1,6 @@
 package bank.storage;
 
-import bank.User;
+import bank.user.User;
 
 import java.util.Map;
 

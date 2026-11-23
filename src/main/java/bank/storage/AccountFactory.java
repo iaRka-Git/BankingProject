@@ -1,7 +1,6 @@
 package bank.storage;
 
 import bank.account.*;
-import bank.Currency;
 
 /**
  * Creates a concrete {@link BankAccount} instance while the persisted state is being restored.

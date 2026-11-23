@@ -1,9 +1,10 @@
-package bank;
+package bank.auth;
 
 import bank.logging.BankLogging;
 import bank.logging.SecurityAuditLogger;
 import bank.logging.SecurityAuditLogger.Action;
 import bank.logging.SecurityAuditLogger.Status;
+import bank.user.User;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
