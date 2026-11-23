@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -54,25 +56,38 @@ class StatePersistenceTest {
         Path auditFile = logFile.resolveSibling("security-audit.jsonl");
 
         String password = "private-password";
-        String console = runMain(stateFile, logFile, String.join("\n",
-                "2", "alice", password, password,
-                "2", "UAH", "1",
-                "9", ""));
+        InteractiveMain process = startMain(stateFile, logFile);
+        process.writeLine("2");
+        process.writeLine("alice");
+        process.writeLine(password);
+        process.writeLine(password);
+        process.waitForConsole("User 'alice' was registered.", 10_000);
 
         Map<String, User> reloaded = new JsonPersistence(stateFile).loadUsers();
-        assertTrue(reloaded.containsKey("alice"), console);
+        assertTrue(reloaded.containsKey("alice"), process.console());
+        assertEquals(0, reloaded.get("alice").getAccountCount());
+
+        process.writeLine("2");
+        process.writeLine("UAH");
+        process.writeLine("1");
+        process.waitForConsole("was added to alice.", 10_000);
+
+        reloaded = new JsonPersistence(stateFile).loadUsers();
         assertEquals(1, reloaded.get("alice").getAccountCount());
         assertTrue(reloaded.get("alice").findAccount(ALICE_ACCOUNT).isPresent());
 
+        process.writeLine("9");
+        process.stop();
+        assertTrue(process.exitSuccess());
+
         List<JsonNode> events = readAudit(auditFile);
-        assertEquals(7, events.size());
+        assertEquals(6, events.size());
         assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
         assertEvent(events.get(1), "customer-001", "SAVE_STATE", null, "SUCCESS");
         assertEvent(events.get(2), "alice", "REGISTER", null, "SUCCESS");
         assertEvent(events.get(3), "alice", "SAVE_STATE", null, "SUCCESS");
         assertEvent(events.get(4), "alice", "OPEN_ACCOUNT", ALICE_ACCOUNT, "SUCCESS");
         assertEvent(events.get(5), "alice", "SAVE_STATE", null, "SUCCESS");
-        assertEvent(events.get(6), "alice", "SAVE_STATE", null, "SUCCESS");
     }
 
     @Test
@@ -176,6 +191,27 @@ class StatePersistenceTest {
                 .anyMatch(transaction -> "Rejected".equals(transaction.comment())));
     }
 
+    @Test
+    void shouldAuditFailedRegistrationWithAttemptedUserId() throws Exception {
+        Path blockedParent = tempDir.resolve("not-a-directory");
+        Files.writeString(blockedParent, "blocks state directory creation");
+        Path stateFile = blockedParent.resolve("state.json");
+        Path logFile = tempDir.resolve("logs/failed-registration.log");
+        String console = runMain(stateFile, logFile, String.join("\n",
+                "2", "alice", "password", "password",
+                "9", ""));
+
+        assertTrue(console.contains("Could not save the bank state"));
+        assertFalse(console.contains("User 'alice' was registered."));
+
+        List<JsonNode> events = readAudit(logFile.resolveSibling("security-audit.jsonl"));
+        assertEquals(4, events.size());
+        assertEvent(events.get(0), "customer-001", "REGISTER", null, "FAILURE");
+        assertEvent(events.get(1), "customer-001", "SAVE_STATE", null, "FAILURE");
+        assertEvent(events.get(2), "alice", "REGISTER", null, "FAILURE");
+        assertEvent(events.get(3), "alice", "SAVE_STATE", null, "FAILURE");
+    }
+
     private boolean commit(Map<String, User> users, StorageService storage,
                            AtomicReference<String> actor, Runnable mutation,
                            Action action, String target) throws Exception {
@@ -210,6 +246,66 @@ class StatePersistenceTest {
             return console;
         } finally {
             process.destroyForcibly();
+        }
+    }
+
+    private InteractiveMain startMain(Path stateFile, Path logFile) throws Exception {
+        Path consoleFile = Files.createTempFile(tempDir, "console-", ".txt");
+        Path errorFile = Files.createTempFile(tempDir, "stderr-", ".txt");
+        String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
+        Path java = Path.of(System.getProperty("java.home"), "bin", executable);
+        Process process = new ProcessBuilder(java.toString(),
+                "-Dfile.encoding=UTF-8", "-Duser.language=en", "-Duser.country=US",
+                "-Dbank.log.file=" + logFile,
+                "-Dbank.audit.file=" + logFile.resolveSibling("security-audit.jsonl"),
+                "-cp", System.getProperty("java.class.path"), "bank.Main", stateFile.toString())
+                .redirectError(errorFile.toFile())
+                .redirectOutput(consoleFile.toFile())
+                .start();
+        return new InteractiveMain(process, consoleFile, errorFile);
+    }
+
+    private static final class InteractiveMain {
+        private final Process process;
+        private final Path consoleFile;
+        private final Path errorFile;
+        private final PrintWriter stdin;
+
+        private InteractiveMain(Process process, Path consoleFile, Path errorFile) throws Exception {
+            this.process = process;
+            this.consoleFile = consoleFile;
+            this.errorFile = errorFile;
+            this.stdin = new PrintWriter(
+                    new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8), true);
+        }
+
+        private void writeLine(String line) {
+            stdin.println(line);
+            stdin.flush();
+        }
+
+        private void waitForConsole(String text, long timeoutMillis) throws Exception {
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            while (System.nanoTime() < deadline) {
+                if (console().contains(text)) {
+                    return;
+                }
+                Thread.sleep(25);
+            }
+            throw new AssertionError("Timed out waiting for console text '" + text + "'. Console:\n" + console());
+        }
+
+        private String console() throws Exception {
+            return Files.readString(consoleFile);
+        }
+
+        private void stop() throws Exception {
+            assertTrue(process.waitFor(10, TimeUnit.SECONDS), "Console session timed out");
+            assertEquals("", Files.readString(errorFile), "Application logs should use stdout");
+        }
+
+        private boolean exitSuccess() {
+            return process.exitValue() == 0;
         }
     }
 

@@ -76,28 +76,13 @@ public class Main {
                         authService.register(DEMO_USER_ID, DEMO_PASSWORD);
                         sessionActor.set(DEMO_USER_ID);
                     },
-                    Action.REGISTER, null);
+                    Action.REGISTER, null, DEMO_USER_ID);
             if (saved) {
                 LOGGER.info("No user was found, a demo user was created: "
                         + DEMO_USER_ID
                         + " (choose 'Register a new user' to create your own)");
             }
         }
-
-        Runnable saveState = () -> {
-            try {
-                storage.saveUsers(users);
-                SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.SUCCESS);
-                LOGGER.info("Bank state saved to " + stateFile.toAbsolutePath());
-                SYSTEM_LOGGER.info("Bank state saved");
-            } catch (StorageException e) {
-                SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.FAILURE);
-                LOGGER.severe("Could not save the bank state");
-                SYSTEM_LOGGER.log(Level.SEVERE, "Could not save the bank state", e);
-            }
-        };
-        // Also persist the state when the JVM is stopped with Ctrl+C or by the IDE
-        Runtime.getRuntime().addShutdownHook(new Thread(saveState, "bank-state-saver"));
 
         try (Scanner scanner = new Scanner(System.in)) {
             User user = entryMenu(authService, scanner, users, storage, sessionActor);
@@ -108,7 +93,6 @@ public class Main {
                 runMenu(user, users, scanner, accountNumbers, storage, sessionActor);
             }
         }
-        saveState.run();
     }
 
     /**
@@ -195,7 +179,7 @@ public class Main {
                         registered[0] = authService.register(userId, password);
                         sessionActor.set(registered[0].getUserId());
                     },
-                    Action.REGISTER, null);
+                    Action.REGISTER, null, userId);
             if (saved) {
                 sessionActor.set(registered[0].getUserId());
                 LOGGER.info("User '" + registered[0].getUserId() + "' was registered.");
@@ -459,6 +443,12 @@ public class Main {
     private static boolean mutateAndSave(Map<String, User> users, StorageService storage,
                                          AtomicReference<String> sessionActor, Runnable mutation,
                                          Action action, String target) {
+        return mutateAndSave(users, storage, sessionActor, mutation, action, target, null);
+    }
+
+    private static boolean mutateAndSave(Map<String, User> users, StorageService storage,
+                                         AtomicReference<String> sessionActor, Runnable mutation,
+                                         Action action, String target, String failureActor) {
         Map<String, Boolean> existingUsers = new LinkedHashMap<>();
         Map<String, List<String>> existingAccounts = new LinkedHashMap<>();
         List<AccountSnapshot> accountSnapshots = new ArrayList<>();
@@ -485,8 +475,9 @@ public class Main {
         } catch (StorageException e) {
             rollback(users, existingUsers, existingAccounts, accountSnapshots);
             sessionActor.set(previousActor);
-            SecurityAuditLogger.record(sessionActor.get(), action, target, Status.FAILURE);
-            SecurityAuditLogger.record(sessionActor.get(), Action.SAVE_STATE, null, Status.FAILURE);
+            String auditActor = failureActor != null ? failureActor : previousActor;
+            SecurityAuditLogger.record(auditActor, action, target, Status.FAILURE);
+            SecurityAuditLogger.record(auditActor, Action.SAVE_STATE, null, Status.FAILURE);
             LOGGER.severe("Could not save the bank state");
             SYSTEM_LOGGER.log(Level.SEVERE, "Could not save the bank state", e);
             return false;

@@ -68,7 +68,7 @@ class MainCliOperationsTest {
 
         String auditText = Files.readString(auditFile);
         List<JsonNode> events = readAudit(auditFile);
-        assertEquals(11, events.size());
+        assertEquals(10, events.size());
         assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
         assertEvent(events.get(1), "customer-001", "SAVE_STATE", null, "SUCCESS");
         assertEvent(events.get(2), "alice", "REGISTER", null, "SUCCESS");
@@ -78,8 +78,6 @@ class MainCliOperationsTest {
         assertEvent(events.get(6), "alice", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
         assertEvent(events.get(7), "alice", "SAVE_STATE", null, "SUCCESS");
         assertEvent(events.get(8), "alice", "WITHDRAW", FIRST_ACCOUNT_NUMBER, "SUCCESS");
-        assertEvent(events.get(9), "alice", "SAVE_STATE", null, "SUCCESS");
-        assertEvent(events.get(10), "alice", "SAVE_STATE", null, "SUCCESS");
         assertFalse(auditText.contains("35.25"));
         assertFalse(auditText.contains("64.75"));
         assertFalse(auditText.contains("100.00"));
@@ -192,11 +190,10 @@ class MainCliOperationsTest {
         assertEquals(1, reloadedBob.getStatement().size());
 
         List<JsonNode> events = readAudit(auditFile);
-        assertEquals(4, events.size());
+        assertEquals(3, events.size());
         assertEvent(events.get(0), "bob", "LOGIN", null, "SUCCESS");
         assertEvent(events.get(1), "bob", "WITHDRAW", FIRST_ACCOUNT_NUMBER, "FAILURE");
         assertEvent(events.get(2), "bob", "TRANSFER", FIRST_ACCOUNT_NUMBER + "->" + bobAccountNumber, "FAILURE");
-        assertEvent(events.get(3), "bob", "SAVE_STATE", null, "SUCCESS");
     }
 
     @Test
@@ -254,7 +251,7 @@ class MainCliOperationsTest {
         assertAccountState(reloaded.get("bob"), bobActiveUsd, "10.00", 1);
 
         List<JsonNode> events = readAudit(auditFile);
-        assertEquals(10, events.size());
+        assertEquals(9, events.size());
         assertEvent(events.get(0), "alice", "LOGIN", null, "SUCCESS");
         assertEvent(events.get(1), "alice", "WITHDRAW", aliceActive, "FAILURE");
         assertEvent(events.get(2), "alice", "WITHDRAW", aliceBlocked, "FAILURE");
@@ -264,7 +261,6 @@ class MainCliOperationsTest {
         assertEvent(events.get(6), "alice", "TRANSFER", aliceBlocked + "->" + bobActiveUah, "FAILURE");
         assertEvent(events.get(7), "alice", "TRANSFER", aliceActive + "->" + bobActiveUah, "FAILURE");
         assertEvent(events.get(8), "alice", "TRANSFER", aliceActive + "->" + bobActiveUsd, "FAILURE");
-        assertEvent(events.get(9), "alice", "SAVE_STATE", null, "SUCCESS");
     }
 
     private static CheckingAccount newFundedCheckingAccount(String accountNumber, String ownerId, Currency currency,
