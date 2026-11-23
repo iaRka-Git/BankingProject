@@ -86,6 +86,11 @@ public class User {
         accounts.add(account);
     }
 
+    public boolean removeAccount(BankAccount account) {
+        Objects.requireNonNull(account, "Account cannot be null");
+        return accounts.remove(account);
+    }
+
     /**
      * Blocks one of the user's accounts by setting its {@code isActive} flag to {@code false}.
      *

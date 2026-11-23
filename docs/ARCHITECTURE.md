@@ -115,8 +115,8 @@ sequenceDiagram
     Source-->>Main: Updated balances & statements
     Main->>Audit: record(actor, action, target, SUCCESS/FAILURE)
 
-    Customer->>Main: Exit (or JVM shutdown hook)
-    Main->>Store: saveUsers(users)
+    Customer->>Main: Perform account operation
+    Main->>Store: mutate state, then saveUsers(users)
     Note over Store: Writes bank-state-*.json.tmp then atomic Files.move()
     Store-->>Main: Persisted to data/bank-state.json
     Main->>Audit: record(actor, SAVE_STATE, null, SUCCESS/FAILURE)

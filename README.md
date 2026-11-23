@@ -42,7 +42,8 @@ On macOS or Linux:
 java -cp "target/classes:target/dependency/*" bank.Main
 ```
 
-The optional first argument sets the JSON state file. Append `data/demo-state.json` to the launch command to keep the demo data separate. The default is `data/bank-state.json`. The CLI saves state on exit.
+The optional first argument sets the JSON state file. Append `data/demo-state.json` to the launch command to keep the demo data separate. The default is `data/bank-state.json`. The CLI saves state after each successful change.
+Each JSON state file is intended for use by one application instance at a time.
 
 ### Try the CLI
 
@@ -50,7 +51,7 @@ The optional first argument sets the JSON state file. Append `data/demo-state.js
 2. Choose **2) Open a new account**, enter `UAH`, and choose **1) Checking account**. Copy the account number shown in the confirmation.
 3. Choose **5) Deposit money**, enter that account number, and enter `125.50`.
 4. Choose **6) Withdraw money** or **7) Transfer money** to move funds, then **8) View account statement** to inspect transactions.
-5. Choose **1) Show my accounts** to check the balance, then **9) Exit** to save the state.
+5. Choose **1) Show my accounts** to check the balance, then **9) Exit**.
 6. Restart the application with the same state file and sign in to see the saved account and balance.
 
 ## Project layout
