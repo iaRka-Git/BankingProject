@@ -12,14 +12,17 @@ import bank.storage.StorageService;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Scanner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -33,6 +36,8 @@ public class Main {
     private static final int MAX_LOGIN_ATTEMPTS = 3;
     private static final String DEMO_USER_ID = "customer-001";
     private static final String DEMO_PASSWORD = "secret123";
+    private static final DateTimeFormatter STATEMENT_TIMESTAMP_FORMAT =
+            DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss");
 
     public static void main(String[] args) {
         Path stateFile = (args.length > 0 && !args[0].isBlank()) ? Path.of(args[0]) : DEFAULT_STATE_FILE;
@@ -92,7 +97,7 @@ public class Main {
                 sessionActor.set(user.getUserId());
                 LOGGER.info("Welcome, " + user.getUserId() + "!");
                 showAccounts(user);
-                runMenu(user, scanner, accountNumbers);
+                runMenu(user, users, scanner, accountNumbers);
             }
         }
         saveState.run();
@@ -199,7 +204,8 @@ public class Main {
         return null;
     }
 
-    private static void runMenu(User user, Scanner scanner, AccountNumberGenerator accountNumbers) {
+    private static void runMenu(User user, Map<String, User> users, Scanner scanner,
+                                AccountNumberGenerator accountNumbers) {
         boolean running = true;
         while (running) {
             LOGGER.info("""
@@ -210,7 +216,10 @@ public class Main {
                       3) Block an account
                       4) Unblock an account
                       5) Deposit money
-                      6) Exit
+                      6) Withdraw money
+                      7) Transfer money
+                      8) View account statement
+                      9) Exit
                     ----------------------------------------""");
             LOGGER.info("Choose an option: ");
 
@@ -226,7 +235,10 @@ public class Main {
                 case "3" -> changeAccountState(user, scanner, false);
                 case "4" -> changeAccountState(user, scanner, true);
                 case "5" -> deposit(user, scanner);
-                case "6" -> running = false;
+                case "6" -> withdraw(user, scanner);
+                case "7" -> transfer(user, users, scanner);
+                case "8" -> showStatement(user, scanner);
+                case "9" -> running = false;
                 default -> LOGGER.warning("Unknown option '" + option + "', please try again.");
             }
         }
@@ -361,6 +373,17 @@ public class Main {
     }
 
     private static void deposit(User user, Scanner scanner) {
+        applyAccountAmount(user, scanner, Action.DEPOSIT, "Deposit failed",
+                (account, amount) -> account.deposit(amount, "Console deposit"));
+    }
+
+    private static void withdraw(User user, Scanner scanner) {
+        applyAccountAmount(user, scanner, Action.WITHDRAW, "Withdrawal failed",
+                (account, amount) -> account.withdraw(amount, "Console withdrawal"));
+    }
+
+    private static void applyAccountAmount(User user, Scanner scanner, Action action, String failureLabel,
+                                           BiConsumer<BankAccount, BigDecimal> operation) {
         String accountNumber = readValue(scanner, "Account number: ");
         String amount = readValue(scanner, "Amount: ");
         if (accountNumber == null || amount == null) {
@@ -370,23 +393,118 @@ public class Main {
 
         Optional<BankAccount> account = user.findAccount(accountNumber);
         if (account.isEmpty()) {
-            SecurityAuditLogger.record(user.getUserId(), Action.DEPOSIT, accountNumber, Status.FAILURE);
+            SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.FAILURE);
             LOGGER.warning("User '" + user.getUserId() + "' has no account with number '" + accountNumber + "'.");
             return;
         }
 
         try {
-            account.get().deposit(new BigDecimal(amount), "Console deposit");
-            SecurityAuditLogger.record(user.getUserId(), Action.DEPOSIT, accountNumber, Status.SUCCESS);
+            operation.accept(account.get(), new BigDecimal(amount));
+            SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.SUCCESS);
             LOGGER.info("New balance of " + accountNumber + ": "
                     + account.get().getBalance() + " " + account.get().getCurrency());
         } catch (NumberFormatException e) {
-            SecurityAuditLogger.record(user.getUserId(), Action.DEPOSIT, accountNumber, Status.FAILURE);
+            SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.FAILURE);
             LOGGER.warning("'" + amount + "' is not a valid amount.");
         } catch (IllegalArgumentException | IllegalStateException e) {
-            SecurityAuditLogger.record(user.getUserId(), Action.DEPOSIT, accountNumber, Status.FAILURE);
-            LOGGER.warning("Deposit failed: " + e.getMessage());
+            SecurityAuditLogger.record(user.getUserId(), action, accountNumber, Status.FAILURE);
+            LOGGER.warning(failureLabel + ": " + e.getMessage());
         }
+    }
+
+    private static void transfer(User user, Map<String, User> users, Scanner scanner) {
+        String sourceAccountNumber = readValue(scanner, "Source account number: ");
+        String recipientAccountNumber = readValue(scanner, "Recipient account number: ");
+        String amount = readValue(scanner, "Amount: ");
+        if (sourceAccountNumber == null || recipientAccountNumber == null || amount == null) {
+            LOGGER.info("End of input reached.");
+            return;
+        }
+
+        String auditTarget = sourceAccountNumber + "->" + recipientAccountNumber;
+        Optional<BankAccount> sourceAccount = user.findAccount(sourceAccountNumber);
+        if (sourceAccount.isEmpty()) {
+            SecurityAuditLogger.record(user.getUserId(), Action.TRANSFER, auditTarget, Status.FAILURE);
+            LOGGER.warning("User '" + user.getUserId() + "' has no account with number '"
+                    + sourceAccountNumber + "'.");
+            return;
+        }
+
+        Optional<BankAccount> recipientAccount = findAccount(users, recipientAccountNumber);
+        if (recipientAccount.isEmpty()) {
+            SecurityAuditLogger.record(user.getUserId(), Action.TRANSFER, auditTarget, Status.FAILURE);
+            LOGGER.warning("Recipient account '" + recipientAccountNumber + "' was not found.");
+            return;
+        }
+
+        try {
+            BigDecimal transferAmount = new BigDecimal(amount);
+            sourceAccount.get().transfer(recipientAccount.get(), transferAmount, null);
+            SecurityAuditLogger.record(user.getUserId(), Action.TRANSFER, auditTarget, Status.SUCCESS);
+            LOGGER.info("Transferred " + transferAmount + " " + sourceAccount.get().getCurrency()
+                    + " from " + sourceAccountNumber + " to " + recipientAccountNumber
+                    + ". New balance of " + sourceAccountNumber + ": "
+                    + sourceAccount.get().getBalance() + " " + sourceAccount.get().getCurrency());
+        } catch (NumberFormatException e) {
+            SecurityAuditLogger.record(user.getUserId(), Action.TRANSFER, auditTarget, Status.FAILURE);
+            LOGGER.warning("'" + amount + "' is not a valid amount.");
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            SecurityAuditLogger.record(user.getUserId(), Action.TRANSFER, auditTarget, Status.FAILURE);
+            LOGGER.warning("Transfer failed: " + e.getMessage());
+        }
+    }
+
+    private static Optional<BankAccount> findAccount(Map<String, User> users, String accountNumber) {
+        if (accountNumber == null || accountNumber.isBlank()) {
+            return Optional.empty();
+        }
+        return users.values().stream()
+                .map(owner -> owner.findAccount(accountNumber))
+                .flatMap(Optional::stream)
+                .findFirst();
+    }
+
+    private static void showStatement(User user, Scanner scanner) {
+        String accountNumber = readValue(scanner, "Account number: ");
+        if (accountNumber == null) {
+            LOGGER.info("End of input reached.");
+            return;
+        }
+
+        Optional<BankAccount> account = user.findAccount(accountNumber);
+        if (account.isEmpty()) {
+            LOGGER.warning("User '" + user.getUserId() + "' has no account with number '" + accountNumber + "'.");
+            return;
+        }
+
+        BankAccount target = account.get();
+        List<BankAccount.Transaction> statement = target.getStatement();
+        if (statement.isEmpty()) {
+            LOGGER.info("Account " + target.getAccountNumber()
+                    + " (" + target.getBalance() + " " + target.getCurrency() + ") has no transactions yet.");
+            return;
+        }
+
+        LOGGER.info("\nStatement for " + target.getAccountNumber()
+                + " (balance: " + target.getBalance() + " " + target.getCurrency() + "):");
+        for (BankAccount.Transaction transaction : statement) {
+            String timestamp = transaction.timestamp() == null
+                    ? "unknown"
+                    : STATEMENT_TIMESTAMP_FORMAT.format(transaction.timestamp());
+            String comment = transaction.comment() == null ? "" : transaction.comment();
+            LOGGER.info(String.format("  %s | %s %s | %s",
+                    timestamp,
+                    formatSignedAmount(transaction.amount()),
+                    target.getCurrency(),
+                    comment));
+        }
+    }
+
+    private static String formatSignedAmount(BigDecimal amount) {
+        if (amount == null) {
+            return "0";
+        }
+        return amount.signum() > 0 ? "+" + amount.toPlainString() : amount.toPlainString();
     }
 
     private static Currency parseCurrency(String value) {

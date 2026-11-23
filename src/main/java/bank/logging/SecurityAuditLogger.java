@@ -25,7 +25,7 @@ import java.util.logging.Logger;
 public final class SecurityAuditLogger {
 
     public enum Action {
-        REGISTER, LOGIN, OPEN_ACCOUNT, BLOCK_ACCOUNT, UNBLOCK_ACCOUNT, DEPOSIT, SAVE_STATE
+        REGISTER, LOGIN, OPEN_ACCOUNT, BLOCK_ACCOUNT, UNBLOCK_ACCOUNT, DEPOSIT, WITHDRAW, TRANSFER, SAVE_STATE
     }
 
     public enum Status {
@@ -41,8 +41,10 @@ public final class SecurityAuditLogger {
     /**
      * Records one operation outcome. Missing actors are represented as {@code anonymous};
      * {@code target} may be null when the operation does not address a specific account.
-     * For authentication attempts, actor is the claimed user identifier, not proof of login.
-     * Identifiers are JSON-escaped so they cannot introduce additional audit records.
+     * For {@link Action#TRANSFER}, {@code target} records {@code "<sourceAccount>-><recipientAccount>"}
+     * so both account identifiers are captured without logging amounts, balances, comments, or
+     * exception messages. For authentication attempts, actor is the claimed user identifier, not
+     * proof of login. Identifiers are JSON-escaped so they cannot introduce additional audit records.
      */
     public static void record(String actor, Action action, String target, Status status) {
         Objects.requireNonNull(action, "Audit action cannot be null");

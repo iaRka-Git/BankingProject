@@ -5,12 +5,12 @@ BankingProject is a Java command-line application for managing bank accounts. It
 ## Features
 
 - Register and sign in through the console.
-- Open a checking account in UAH, EUR, or USD. The application displays an automatically assigned account number in the format `UA` followed by 18 digits.
-- List your accounts and see their balances, status, and transaction counts.
-- Deposit money and block or unblock accounts.
-- Reload users and checking accounts after a restart. Account numbering continues from the highest saved number in the generated format. Existing numbers are preserved, and duplicate account numbers stop startup with an error identifying the conflict.
+- Open a checking, credit, or term-deposit account in UAH, EUR, or USD. The application displays an automatically assigned account number in the format `UA` followed by 18 digits.
+- List your accounts and see their types, balances, status, and transaction counts.
+- Deposit, withdraw, transfer funds between accounts, view account transaction statements, and block or unblock accounts.
+- Reload users and accounts (checking, credit, and term-deposit) after a restart. Account numbering continues from the highest saved number in the generated format. Existing numbers are preserved, and duplicate account numbers stop startup with an error identifying the conflict.
 
-The domain model includes withdrawal and transfer methods, credit limits, and term-deposit rules. The roadmap below covers exposing those operations and account types through the console.
+The roadmap below covers the remaining consistency and durability improvements.
 
 ## Tech stack
 
@@ -47,10 +47,11 @@ The optional first argument sets the JSON state file. Append `data/demo-state.js
 ### Try the CLI
 
 1. Choose **2) Register a new user**, enter a user ID and password, then confirm the password. Registration starts a signed-in session.
-2. Choose **2) Open a new checking account** and enter `UAH`. Copy the account number shown in the confirmation.
+2. Choose **2) Open a new account**, enter `UAH`, and choose **1) Checking account**. Copy the account number shown in the confirmation.
 3. Choose **5) Deposit money**, enter that account number, and enter `125.50`.
-4. Choose **1) Show my accounts** to check the balance, then **6) Exit** to save the state.
-5. Restart the application with the same state file and sign in to see the saved account and balance.
+4. Choose **6) Withdraw money** or **7) Transfer money** to move funds, then **8) View account statement** to inspect transactions.
+5. Choose **1) Show my accounts** to check the balance, then **9) Exit** to save the state.
+6. Restart the application with the same state file and sign in to see the saved account and balance.
 
 ## Project layout
 
@@ -79,6 +80,4 @@ The suite covers account rules, authentication, JSON round trips, and console se
 | --- | --- |
 | [PR #26](https://github.com/iaRka-Git/BankingProject/pull/26) | Synchronize concurrent account operations and establish safe lock ordering for transfers. |
 | BP-011 | Apply consistent precision validation and rounding so statement entries match balance changes. |
-| BP-012 | Add withdrawals, transfers, and transaction statements to the CLI. |
 | BP-013 | Persist each change before confirming success and handle failures without retaining the rejected change. |
-| BP-014 | Open credit and term-deposit accounts in the CLI and restore their type-specific settings from JSON. |
