@@ -1,5 +1,6 @@
 package bank;
 
+import bank.storage.JsonPersistence;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -21,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MainLoggingTest {
+
+    private static final String FIRST_ACCOUNT_NUMBER = "UA000000000000000001";
 
     @TempDir
     Path tempDir;
@@ -34,8 +38,9 @@ class MainLoggingTest {
         Path auditFile = logFile.resolveSibling("security-audit.jsonl");
         String password = "private-test-password";
         String input = String.join("\n", "unknown", "2", "клієнт", password, password,
-                "2", "UA001", "UAH", "5", "UA001", "125.50",
-                "3", "UA001", "5", "UA001", "999.99", "4", "UA001", "1", "6", "");
+                "2", "UAH", "5", FIRST_ACCOUNT_NUMBER, "125.50",
+                "3", FIRST_ACCOUNT_NUMBER, "5", FIRST_ACCOUNT_NUMBER, "999.99",
+                "4", FIRST_ACCOUNT_NUMBER, "1", "6", "");
 
         String console = runMain(stateFile, logFile, input);
         String firstLog = Files.readString(logFile);
@@ -47,14 +52,14 @@ class MainLoggingTest {
         assertTrue(console.contains("Welcome, клієнт!"));
         assertFalse(console.contains("bank.Main"), "Console should omit class and method names");
         assertFalse(console.contains("INFO:"), "Menu should omit log metadata");
-        assertTrue(console.contains("UA001 | CHECKING | 125.50 UAH | ACTIVE | 1 transaction(s)"));
+        assertTrue(console.contains(FIRST_ACCOUNT_NUMBER + " | CHECKING | 125.50 UAH | ACTIVE | 1 transaction(s)"));
         assertTrue(firstLog.contains("[INFO] bank.Main - Bank state saved"), firstLog);
         assertFalse(firstLog.contains("lambda$"), "Log headers should omit generated method names");
         assertFalse(firstLog.contains("Choose an option"));
         assertFalse(firstLog.contains("Password:"));
         assertFalse(firstLog.contains("Unknown option"));
         assertFalse(firstLog.contains("клієнт"));
-        assertFalse(firstLog.contains("UA001"));
+        assertFalse(firstLog.contains(FIRST_ACCOUNT_NUMBER));
         assertFalse(firstLog.contains("125.50"));
         assertFalse(firstLog.contains("999.99"));
         assertFalse(firstLog.contains(password));
@@ -65,11 +70,11 @@ class MainLoggingTest {
         assertEquals(8, events.size());
         assertEvent(events.get(0), "customer-001", "REGISTER", null, "SUCCESS");
         assertEvent(events.get(1), "клієнт", "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(2), "клієнт", "OPEN_ACCOUNT", "UA001", "SUCCESS");
-        assertEvent(events.get(3), "клієнт", "DEPOSIT", "UA001", "SUCCESS");
-        assertEvent(events.get(4), "клієнт", "BLOCK_ACCOUNT", "UA001", "SUCCESS");
-        assertEvent(events.get(5), "клієнт", "DEPOSIT", "UA001", "FAILURE");
-        assertEvent(events.get(6), "клієнт", "UNBLOCK_ACCOUNT", "UA001", "SUCCESS");
+        assertEvent(events.get(2), "клієнт", "OPEN_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(3), "клієнт", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(4), "клієнт", "BLOCK_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
+        assertEvent(events.get(5), "клієнт", "DEPOSIT", FIRST_ACCOUNT_NUMBER, "FAILURE");
+        assertEvent(events.get(6), "клієнт", "UNBLOCK_ACCOUNT", FIRST_ACCOUNT_NUMBER, "SUCCESS");
         assertEvent(events.get(7), "клієнт", "SAVE_STATE", null, "SUCCESS");
         assertFalse(firstAudit.contains(password));
         assertFalse(firstAudit.contains("secret123"));
@@ -154,18 +159,75 @@ class MainLoggingTest {
     @Test
     void shouldEscapeIdentifiersInStructuredAuditRecords() throws Exception {
         Path logFile = tempDir.resolve("logs/bank.log");
+        Path stateFile = tempDir.resolve("state.json");
         String actor = "user\"\\\tidentifier";
         String accountNumber = "UA\"\\\t001";
-        String input = String.join("\n", "2", actor, "private-password", "private-password",
-                "2", accountNumber, "UAH", "6", "");
+        String password = "private-password";
+        User user = new User(actor, AuthService.hashPassword(password));
+        user.addAccount(new CheckingAccount(accountNumber, actor, Currency.UAH));
+        new JsonPersistence(stateFile).saveUsers(Map.of(actor, user));
+        String input = String.join("\n", "1", actor, password, "5", accountNumber, "1", "6", "");
 
-        runMain(tempDir.resolve("state.json"), logFile, input);
+        runMain(stateFile, logFile, input);
 
         List<JsonNode> events = readAudit(logFile.resolveSibling("security-audit.jsonl"));
-        assertEquals(4, events.size());
-        assertEvent(events.get(1), actor, "REGISTER", null, "SUCCESS");
-        assertEvent(events.get(2), actor, "OPEN_ACCOUNT", accountNumber, "SUCCESS");
-        assertEvent(events.get(3), actor, "SAVE_STATE", null, "SUCCESS");
+        assertEquals(3, events.size());
+        assertEvent(events.get(0), actor, "LOGIN", null, "SUCCESS");
+        assertEvent(events.get(1), actor, "DEPOSIT", accountNumber, "SUCCESS");
+        assertEvent(events.get(2), actor, "SAVE_STATE", null, "SUCCESS");
+    }
+
+    @Test
+    void shouldAssignUniqueAccountNumbersAcrossUsersAndRestarts() throws Exception {
+        Path stateFile = tempDir.resolve("state.json");
+        Path logFile = tempDir.resolve("logs/bank.log");
+        String password = "private-password";
+        String legacyNumber = "UA001";
+        String highestNumber = "UA000000000000000042";
+        User alice = new User("alice", AuthService.hashPassword(password));
+        alice.addAccount(new CheckingAccount(highestNumber, "alice", Currency.UAH));
+        alice.addAccount(new CheckingAccount(legacyNumber, "alice", Currency.UAH));
+        JsonPersistence storage = new JsonPersistence(stateFile);
+        storage.saveUsers(Map.of("alice", alice));
+
+        String firstRun = runMain(stateFile, logFile,
+                String.join("\n", "1", "alice", password, "2", "UAH", "2", "USD", "6", ""));
+        String secondRun = runMain(stateFile, logFile,
+                String.join("\n", "2", "bob", password, password, "2", "EUR", "6", ""));
+
+        assertFalse(firstRun.contains("Account number:"));
+        assertFalse(secondRun.contains("Account number:"));
+        String aliceFirstNewNumber = "UA000000000000000043";
+        String aliceSecondNewNumber = "UA000000000000000044";
+        String bobNumber = "UA000000000000000045";
+        assertTrue(firstRun.contains("Account " + aliceFirstNewNumber + " was added to alice."));
+        assertTrue(secondRun.contains("Account " + bobNumber + " was added to bob."));
+        Map<String, User> loaded = storage.loadUsers();
+        assertEquals(List.of(highestNumber, legacyNumber, aliceFirstNewNumber, aliceSecondNewNumber),
+                loaded.get("alice").getAccounts().stream().map(BankAccount::getAccountNumber).toList());
+        assertEquals(List.of(bobNumber),
+                loaded.get("bob").getAccounts().stream().map(BankAccount::getAccountNumber).toList());
+    }
+
+    @Test
+    void shouldReportDuplicateAccountNumbersAndPreserveTheStateFile() throws Exception {
+        Path stateFile = tempDir.resolve("state.json");
+        Path logFile = tempDir.resolve("logs/bank.log");
+        String number = "legacy-001";
+        User alice = new User("alice", "hash");
+        User bob = new User("bob", "hash");
+        alice.addAccount(new CheckingAccount(number, "alice", Currency.UAH));
+        bob.addAccount(new CheckingAccount(number, "bob", Currency.USD));
+        new JsonPersistence(stateFile).saveUsers(Map.of("alice", alice, "bob", bob));
+        String original = Files.readString(stateFile);
+
+        String console = runMain(stateFile, logFile, "");
+
+        assertTrue(console.contains("Duplicate account number '" + number + "'"), console);
+        assertTrue(console.contains("alice"), console);
+        assertTrue(console.contains("bob"), console);
+        assertFalse(console.contains("Choose an option:"), console);
+        assertEquals(original, Files.readString(stateFile));
     }
 
     private List<JsonNode> readAudit(Path auditFile) throws IOException {
