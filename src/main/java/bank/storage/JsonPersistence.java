@@ -175,7 +175,7 @@ public class JsonPersistence implements StorageService {
 
     private AccountRecord toAccountRecord(BankAccount account) {
         return new AccountRecord(resolveType(account), account.getAccountNumber(), account.getOwnerId(),
-                account.getCurrency().name(), account.isActive(), account.getBalance(), account.getStatement().stream()
+                account.getCurrency().name(), account.isActive(), account.getRawBalance(), account.getStatement().stream()
                 .map(JsonPersistence::toTransactionRecord)
                 .toList());
     }

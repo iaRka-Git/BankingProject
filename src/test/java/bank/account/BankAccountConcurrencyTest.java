@@ -197,7 +197,7 @@ class BankAccountConcurrencyTest {
 
         assertEquals(new BigDecimal("100.00"), sender.getBalance(), "Sender balance must remain unchanged");
         assertEquals(1, sender.getStatement().size(), "Sender statement must not record failed transfer");
-        assertEquals(BigDecimal.ZERO, recipient.getBalance(), "Recipient balance must remain unchanged");
+        assertEquals(new BigDecimal("0.00"), recipient.getBalance(), "Recipient balance must remain unchanged");
         assertTrue(recipient.getStatement().isEmpty(), "Recipient statement must remain empty");
     }
 
@@ -226,7 +226,7 @@ class BankAccountConcurrencyTest {
         );
 
         assertEquals(new BigDecimal("100.00"), accountA.getBalance());
-        assertEquals(BigDecimal.ZERO, accountB.getBalance());
+        assertEquals(new BigDecimal("0.00"), accountB.getBalance());
     }
 
     @Test

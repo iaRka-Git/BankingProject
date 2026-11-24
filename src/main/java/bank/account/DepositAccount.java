@@ -87,9 +87,9 @@ public class DepositAccount extends BankAccount {
             throw new IllegalStateException("Account is blocked or inactive.");
         }
 
-        BigDecimal interest = balance.multiply(interestRate).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal interest = balance.multiply(interestRate).setScale(6, RoundingMode.HALF_UP);
         if (interest.compareTo(BigDecimal.ZERO) > 0) {
-            balance = balance.add(interest).setScale(2, RoundingMode.HALF_UP);
+            balance = balance.add(interest).setScale(6, RoundingMode.DOWN);
             recordTransaction(interest, INTEREST_ACCRUAL_COMMENT);
         }
     }
@@ -102,6 +102,9 @@ public class DepositAccount extends BankAccount {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Withdrawal amount must be positive.");
         }
+        if (amount.stripTrailingZeros().scale() > 2) {
+            throw new IllegalArgumentException("Withdrawal amount cannot have more than 2 decimal places: " + amount);
+        }
         if (balance.compareTo(amount) < 0) {
             throw new IllegalStateException("Insufficient funds.");
         }
@@ -109,7 +112,8 @@ public class DepositAccount extends BankAccount {
 
     /** Processes a standard withdrawal after the maturity date. */
     private void withdrawStandard(BigDecimal amount, String comment) {
-        balance = balance.subtract(amount).setScale(2, RoundingMode.HALF_UP);
+        amount = amount.setScale(2, RoundingMode.DOWN);
+        balance = balance.subtract(amount).setScale(6, RoundingMode.DOWN);
         String txComment = (comment != null && !comment.isBlank()) ? comment : WITHDRAWAL_COMMENT;
         recordTransaction(amount.negate(), txComment);
     }
@@ -120,6 +124,7 @@ public class DepositAccount extends BankAccount {
             throw new IllegalStateException("Withdrawals are locked until maturity date");
         }
 
+        amount = amount.setScale(2, RoundingMode.DOWN);
         BigDecimal penalty = amount.multiply(EARLY_WITHDRAWAL_PENALTY_RATE).setScale(2, RoundingMode.HALF_UP);
         BigDecimal totalDeduction = amount.add(penalty);
 
@@ -127,7 +132,7 @@ public class DepositAccount extends BankAccount {
             throw new IllegalStateException("Insufficient funds to cover withdrawal and penalty.");
         }
 
-        balance = balance.subtract(totalDeduction).setScale(2, RoundingMode.HALF_UP);
+        balance = balance.subtract(totalDeduction).setScale(6, RoundingMode.DOWN);
         String txComment = (comment != null && !comment.isBlank()) ? comment : EARLY_WITHDRAWAL_COMMENT;
         recordTransaction(totalDeduction.negate(), txComment);
     }

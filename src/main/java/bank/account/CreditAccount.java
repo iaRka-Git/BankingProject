@@ -19,11 +19,10 @@ import java.util.Objects;
  * #chargeCreditInterest()} applies one month's worth per call. The method is
  * intended to run once per billing period; it does not track elapsed time and
  * calling it twice in the same period charges on the already-reduced balance.
- *
- * <p>Like the rest of the model, this class is not thread-safe.
  */
 public class CreditAccount extends BankAccount {
 
+    private static final int INTERNAL_SCALE = 6;
     private static final int MONEY_SCALE = 2;
     private static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
 
@@ -88,13 +87,17 @@ public class CreditAccount extends BankAccount {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Withdrawal amount must be positive.");
         }
+        if (amount.stripTrailingZeros().scale() > MONEY_SCALE) {
+            throw new IllegalArgumentException("Withdrawal amount cannot have more than 2 decimal places: " + amount);
+        }
 
+        amount = amount.setScale(MONEY_SCALE, MONEY_ROUNDING);
         BigDecimal projected = this.balance.subtract(amount);
         if (projected.compareTo(floor()) < 0) {
             throw new IllegalStateException("Credit limit exceeded.");
         }
 
-        this.balance = projected;
+        this.balance = projected.setScale(INTERNAL_SCALE, MONEY_ROUNDING);
         String txComment = (comment != null && !comment.isBlank()) ? comment : DEFAULT_WITHDRAWAL_COMMENT;
         recordTransaction(amount.negate(), txComment);
     }
@@ -102,11 +105,10 @@ public class CreditAccount extends BankAccount {
     /**
      * Charges one month's interest on the negative balance.
      *
-     * <p>The fee is {@code round(abs(balance) * interestRate / 100 / 12)} at
-     * scale 2, {@code HALF_UP}. It is deducted from the balance and recorded as
-     * a negative transaction. An interest charge is intentionally <em>not</em>
-     * refused for taking the balance below {@code -creditLimit}; refusing it
-     * would let an account escape accrued fees. What the limit blocks is further
+     * <p>The fee is calculated at scale 6, {@code HALF_UP}. It is deducted from
+     * the balance and recorded as a negative transaction. An interest charge is
+     * intentionally <em>not</em> refused for taking the balance below {@code -creditLimit};
+     * refusing it would let an account escape accrued fees. What the limit blocks is further
      * withdrawals, not the posting of fees.
      *
      * @return the positive fee charged, or {@link BigDecimal#ZERO} when the
@@ -119,13 +121,13 @@ public class CreditAccount extends BankAccount {
 
         BigDecimal fee = this.balance.abs()
                 .multiply(interestRate)
-                .divide(MONTHLY_RATE_DIVISOR, MONEY_SCALE, MONEY_ROUNDING);
+                .divide(MONTHLY_RATE_DIVISOR, INTERNAL_SCALE, MONEY_ROUNDING);
 
         if (fee.signum() == 0) {
             return BigDecimal.ZERO;
         }
 
-        this.balance = this.balance.subtract(fee);
+        this.balance = this.balance.subtract(fee).setScale(INTERNAL_SCALE, MONEY_ROUNDING);
         recordTransaction(fee.negate(), INTEREST_COMMENT);
         return fee;
     }

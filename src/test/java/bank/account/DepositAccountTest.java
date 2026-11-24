@@ -112,8 +112,26 @@ class DepositAccountTest {
         assertEquals(2, account.getStatement().size());
 
         BankAccount.Transaction interestTx = account.getStatement().get(1);
-        assertEquals(expectedInterest, interestTx.amount());
+        assertEquals(0, expectedInterest.compareTo(interestTx.amount()));
         assertEquals("Interest accrual for deposit", interestTx.comment());
+    }
+
+    @Test
+    void shouldAccrueInterestOnInvisibleMicroBalance() {
+        DepositAccount deposit = new DepositAccount(
+                "UA-TEST-MICRO", "owner-1", CURRENCY,
+                LocalDate.now().plusDays(30), false, new BigDecimal("0.10")
+        );
+
+        deposit.restoreState(new BigDecimal("0.004000"), true, null);
+        assertEquals(new BigDecimal("0.00"), deposit.getBalance());
+
+        deposit.accrueInterest();
+
+        assertEquals(1, deposit.getStatement().size());
+        assertEquals(new BigDecimal("0.000400"), deposit.getStatement().get(0).amount());
+        assertEquals(new BigDecimal("0.004400"), deposit.getRawBalance());
+        assertEquals(new BigDecimal("0.00"), deposit.getBalance());
     }
 
     @Test

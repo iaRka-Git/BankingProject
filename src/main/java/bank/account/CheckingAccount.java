@@ -3,6 +3,7 @@ package bank.account;
 import bank.Currency;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * Standard checking account.
@@ -32,12 +33,17 @@ public class CheckingAccount extends BankAccount {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Withdrawal amount must be positive.");
         }
+        if (amount.stripTrailingZeros().scale() > 2) {
+            throw new IllegalArgumentException("Withdrawal amount cannot have more than 2 decimal places: " + amount);
+        }
+
+        amount = amount.setScale(2, RoundingMode.DOWN);
         if (balance.compareTo(amount) < 0) {
-            throw new IllegalArgumentException("Insufficient funds: balance is " + balance
+            throw new IllegalArgumentException("Insufficient funds: balance is " + getBalance()
                     + " " + getCurrency() + ", requested " + amount + ".");
         }
 
-        this.balance = this.balance.subtract(amount);
+        this.balance = this.balance.subtract(amount).setScale(6, RoundingMode.DOWN);
 
         String txComment = (comment != null && !comment.isBlank()) ? comment : "Account withdrawal";
         recordTransaction(amount.negate(), txComment);

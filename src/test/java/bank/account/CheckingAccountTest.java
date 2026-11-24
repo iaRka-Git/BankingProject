@@ -20,7 +20,7 @@ class CheckingAccountTest {
 
     @Test
     void shouldStartWithZeroBalanceAndEmptyStatement() {
-        assertEquals(BigDecimal.ZERO, account.getBalance());
+        assertEquals(new BigDecimal("0.00"), account.getBalance());
         assertTrue(account.getStatement().isEmpty());
         assertTrue(account.isActive());
         assertEquals(ACCOUNT_NUMBER, account.getAccountNumber());
@@ -97,5 +97,30 @@ class CheckingAccountTest {
     @Test
     void shouldRejectNullBalanceOnRestore() {
         assertThrows(NullPointerException.class, () -> account.restoreState(null, true, null));
+    }
+
+    @Test
+    void shouldRejectDepositWithMoreThanTwoDecimalPlaces() {
+        assertThrows(IllegalArgumentException.class, () ->
+                account.deposit(new BigDecimal("100.001"), "More than 2 decimals"));
+        assertThrows(IllegalArgumentException.class, () ->
+                account.deposit(new BigDecimal("50.123456"), "6 decimals"));
+    }
+
+    @Test
+    void shouldRejectWithdrawWithMoreThanTwoDecimalPlaces() {
+        account.deposit(new BigDecimal("200.00"), "Initial");
+        assertThrows(IllegalArgumentException.class, () ->
+                account.withdraw(new BigDecimal("50.005"), "More than 2 decimals"));
+    }
+
+    @Test
+    void shouldHideFractionalBalanceUsingRoundingDown() {
+        account.restoreState(new BigDecimal("100.009999"), true, null);
+        assertEquals(new BigDecimal("100.00"), account.getBalance());
+
+        account.withdraw(new BigDecimal("100.00"), "Withdraw all visible");
+        assertEquals(new BigDecimal("0.00"), account.getBalance());
+        assertEquals(new BigDecimal("0.009999"), account.getRawBalance());
     }
 }

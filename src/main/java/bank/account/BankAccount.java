@@ -2,6 +2,7 @@ package bank.account;
 import bank.Currency;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -39,7 +40,7 @@ public abstract class BankAccount {
         this.currency = Objects.requireNonNull(currency, "Currency cannot be null");
 
         this.isActive = true;
-        this.balance = BigDecimal.ZERO;
+        this.balance = BigDecimal.ZERO.setScale(6, RoundingMode.DOWN);
         this.transactions = new ArrayList<>();
     }
 
@@ -54,6 +55,14 @@ public abstract class BankAccount {
     }
 
     public synchronized BigDecimal getBalance() {
+        return balance.setScale(2, RoundingMode.DOWN);
+    }
+
+    /**
+     * Returns the raw internal balance with full precision (up to 6 decimal places).
+     * Used by persistence and internal accounting.
+     */
+    public synchronized BigDecimal getRawBalance() {
         return balance;
     }
 
@@ -82,7 +91,7 @@ public abstract class BankAccount {
      * @param transactions the persisted transaction history, may be {@code null} or empty
      */
     public synchronized void restoreState(BigDecimal balance, boolean isActive, List<Transaction> transactions) {
-        this.balance = Objects.requireNonNull(balance, "Balance cannot be null");
+        this.balance = Objects.requireNonNull(balance, "Balance cannot be null").setScale(6, RoundingMode.DOWN);
         this.isActive = isActive;
         this.transactions.clear();
         if (transactions != null) {
@@ -105,8 +114,12 @@ public abstract class BankAccount {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Deposit amount must be positive.");
         }
+        if (amount.stripTrailingZeros().scale() > 2) {
+            throw new IllegalArgumentException("Deposit amount cannot have more than 2 decimal places: " + amount);
+        }
 
-        this.balance = this.balance.add(amount);
+        amount = amount.setScale(2, RoundingMode.DOWN);
+        this.balance = this.balance.add(amount).setScale(6, RoundingMode.DOWN);
 
         String txComment = (comment != null && !comment.isBlank()) ? comment : "Account deposit";
         recordTransaction(amount, txComment);

@@ -2,6 +2,7 @@ package bank;
 import bank.account.*;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  * Test fixture representing a second account type. It shows how additional account types are
@@ -22,11 +23,15 @@ public class SavingsAccount extends BankAccount {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Withdrawal amount must be positive.");
         }
+        if (amount.stripTrailingZeros().scale() > 2) {
+            throw new IllegalArgumentException("Withdrawal amount cannot have more than 2 decimal places: " + amount);
+        }
+        amount = amount.setScale(2, RoundingMode.DOWN);
         if (balance.compareTo(amount) < 0) {
-            throw new IllegalArgumentException("Insufficient funds: balance is " + balance
+            throw new IllegalArgumentException("Insufficient funds: balance is " + getBalance()
                     + " " + getCurrency() + ", requested " + amount + ".");
         }
-        this.balance = this.balance.subtract(amount);
+        this.balance = this.balance.subtract(amount).setScale(6, RoundingMode.DOWN);
         recordTransaction(amount.negate(), comment == null ? "Savings withdrawal" : comment);
     }
 }

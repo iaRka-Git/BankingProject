@@ -41,7 +41,7 @@ class CreditAccountTest {
                 () -> account.withdraw(new BigDecimal("5000.01"), "too much"));
 
         assertTrue(ex.getMessage().contains("Credit limit exceeded"));
-        assertEquals(BigDecimal.ZERO, account.getBalance());
+        assertEquals(new BigDecimal("0.00"), account.getBalance());
     }
 
     @Test
@@ -68,7 +68,7 @@ class CreditAccountTest {
         List<BankAccount.Transaction> statement = account.getStatement();
         assertEquals(1, statement.size());
         assertEquals("Credit funds withdrawal", statement.get(0).comment());
-        assertEquals(new BigDecimal("-100"), statement.get(0).amount());
+        assertEquals(new BigDecimal("-100.00"), statement.get(0).amount());
     }
 
     @Test
@@ -78,18 +78,18 @@ class CreditAccountTest {
         // 1000 * 12 / 100 / 12 = 10.00
         BigDecimal fee = account.chargeCreditInterest();
 
-        assertEquals(new BigDecimal("10.00"), fee);
+        assertEquals(0, new BigDecimal("10.00").compareTo(fee));
         assertEquals(new BigDecimal("-1010.00"), account.getBalance());
     }
 
     @Test
-    void chargeCreditInterestRoundsHalfUpAtScaleTwo() {
+    void chargeCreditInterestPreservesSixDecimalPrecision() {
         account.withdraw(new BigDecimal("333.33"), "spend");
 
-        // 333.33 * 12 / 1200 = 3.3333 -> 3.33
+        // 333.33 * 12 / 1200 = 3.333300
         BigDecimal fee = account.chargeCreditInterest();
 
-        assertEquals(new BigDecimal("3.33"), fee);
+        assertEquals(new BigDecimal("3.333300"), fee);
     }
 
     @Test
@@ -98,10 +98,10 @@ class CreditAccountTest {
                 new BigDecimal("1000"), new BigDecimal("7"));
         oddRate.withdraw(new BigDecimal("100"), "spend");
 
-        // 100 * 7 / 1200 = 0.58333... must not throw ArithmeticException
+        // 100 * 7 / 1200 = 0.583333... must not throw ArithmeticException
         BigDecimal fee = oddRate.chargeCreditInterest();
 
-        assertEquals(new BigDecimal("0.58"), fee);
+        assertEquals(new BigDecimal("0.583333"), fee);
     }
 
     @Test
@@ -111,7 +111,7 @@ class CreditAccountTest {
         BigDecimal fee = account.chargeCreditInterest();
 
         assertEquals(BigDecimal.ZERO, fee);
-        assertEquals(new BigDecimal("500"), account.getBalance());
+        assertEquals(new BigDecimal("500.00"), account.getBalance());
         assertEquals(1, account.getStatement().size());
     }
 
@@ -124,7 +124,7 @@ class CreditAccountTest {
         BigDecimal fee = zeroRate.chargeCreditInterest();
 
         assertEquals(BigDecimal.ZERO, fee);
-        assertEquals(new BigDecimal("-500"), zeroRate.getBalance());
+        assertEquals(new BigDecimal("-500.00"), zeroRate.getBalance());
         assertEquals(1, zeroRate.getStatement().size());
     }
 
@@ -135,7 +135,7 @@ class CreditAccountTest {
         // fee = 4999 * 12 / 1200 = 49.99 -> balance -5048.99, below -5000 floor
         BigDecimal fee = account.chargeCreditInterest();
 
-        assertEquals(new BigDecimal("49.99"), fee);
+        assertEquals(0, new BigDecimal("49.99").compareTo(fee));
         assertEquals(new BigDecimal("-5048.99"), account.getBalance());
     }
 
@@ -157,7 +157,7 @@ class CreditAccountTest {
         BankAccount.Transaction interest = statement.get(statement.size() - 1);
 
         assertEquals("Interest charge on utilized credit", interest.comment());
-        assertEquals(new BigDecimal("-12.00"), interest.amount());
+        assertEquals(0, new BigDecimal("-12.00").compareTo(interest.amount()));
     }
 
     @Test
@@ -165,7 +165,7 @@ class CreditAccountTest {
         account.withdraw(new BigDecimal("1000"), "spend");
         account.deposit(new BigDecimal("1500"), "salary");
 
-        assertEquals(new BigDecimal("500"), account.getBalance());
+        assertEquals(new BigDecimal("500.00"), account.getBalance());
     }
 
     @Test
@@ -175,7 +175,7 @@ class CreditAccountTest {
 
         assertThrows(IllegalStateException.class,
                 () -> noCredit.withdraw(BigDecimal.ONE, "no credit"));
-        assertEquals(BigDecimal.ZERO, noCredit.getBalance());
+        assertEquals(new BigDecimal("0.00"), noCredit.getBalance());
     }
 
     @Test
